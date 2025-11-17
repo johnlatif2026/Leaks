@@ -2,99 +2,36 @@
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>الصفحة الرئيسية</title>
 <style>
-body { font-family: Arial; direction: rtl; padding:20px; background:#f0f4f8; }
-.card { max-width:600px; margin:20px auto; background:#fff; padding:20px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.1); }
-input, button { width:100%; padding:10px; margin-top:10px; border-radius:8px; border:1px solid #ccc; }
-button { background:#2563eb; color:#fff; border:none; cursor:pointer; }
-.section { margin-top:20px; }
-.admin-profile img { width:120px; height:120px; object-fit:cover; border-radius:12px; margin-left:10px; }
+  body { font-family: Arial; text-align:center; margin-top:50px; }
+  img { max-width:200px; }
 </style>
 </head>
 <body>
+<h2>مرحبًا، اكتب اسمك للمتابعة:</h2>
+<input type="text" id="visitorName" placeholder="اسمك" required>
+<button onclick="goNext()">دخول</button>
 
-<div class="card">
-<h2>أهلاً بك في الموقع</h2>
-<p>ادخل اسمك لتتمكن من التصفح:</p>
-<form id="visitorForm">
-  <input type="text" id="visitorName" placeholder="اكتب اسمك هنا" required>
-  <button type="submit">دخول</button>
-</form>
-
-<div id="greeting" class="section" style="display:none;">
-  <p>مرحباً، <span id="nameDisplay"></span></p>
-</div>
-
-<div id="adminSection" class="section"></div>
-</div>
+<div id="data" style="margin-top:50px;"></div>
 
 <script>
-const visitorForm = document.getElementById('visitorForm');
-const greeting = document.getElementById('greeting');
-const nameDisplay = document.getElementById('nameDisplay');
-const adminSection = document.getElementById('adminSection');
-
-visitorForm.addEventListener('submit', async (e)=>{
-  e.preventDefault();
+function goNext() {
   const name = document.getElementById('visitorName').value.trim();
-  if(!name) return alert('الاسم مطلوب');
+  if(!name) return alert('الرجاء كتابة اسمك');
   localStorage.setItem('visitorName', name);
-  showGreeting(name);
-
-  // إرسال الاسم للسيرفر
-  try {
-    await fetch('/api/visitor', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name})
-    });
-  } catch(err){ console.error('Visitor API error',err);}
-});
-
-function showGreeting(name){
-  nameDisplay.textContent = name;
-  greeting.style.display='block';
-  visitorForm.style.display='none';
-  fetchProfile();
+  fetchData();
 }
 
-// Fetch admin profile
-async function fetchProfile(){
-  try{
-    const res = await fetch('/api/public/profile');
-    const json = await res.json();
-    renderProfile(json);
-  } catch(err){
-    adminSection.innerHTML='<p>فشل تحميل بيانات الادمن.</p>';
-    console.error(err);
-  }
-}
-
-function renderProfile(data){
-  if(!data.exists){
-    adminSection.innerHTML='<p>لا توجد بيانات للعرض بعد.</p>';
-    return;
-  }
-  const d = data.data;
-  const uploadedAt = d.updatedAt ? new Date(d.updatedAt._seconds*1000).toLocaleString() : 'غير معروف';
-  adminSection.innerHTML = `
-    <div class="admin-profile" style="display:flex;align-items:center;">
-      ${d.imageUrl? `<img src="${d.imageUrl}" alt="صورة الادمن">` : ''}
-      <div>
-        <h3>${d.name||''}</h3>
-        <p>${d.description||''}</p>
-        <small>أخر تعديل: ${uploadedAt}</small>
-      </div>
-    </div>
+async function fetchData() {
+  const res = await fetch('/api/data');
+  const data = await res.json();
+  const visitorName = localStorage.getItem('visitorName');
+  document.getElementById('data').innerHTML = `
+    <h1>${visitorName}</h1>
+    ${data.name ? `<h2>${data.name}</h2><p>${data.description}</p>${data.imageUrl ? `<img src="${data.imageUrl}"/>` : ''}` : ''}
   `;
 }
-
-// Check localStorage
-const savedName = localStorage.getItem('visitorName');
-if(savedName) showGreeting(savedName);
 </script>
-
 </body>
 </html>
