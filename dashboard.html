@@ -2,104 +2,58 @@
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard - Admin</title>
+<title>داشبورد الادمن</title>
 <style>
-body { font-family: Arial, sans-serif; direction: rtl; padding:20px; background:#f0f4f8; }
-.container { max-width:900px; margin:20px auto; }
-.card { background:#fff; padding:18px; border-radius:12px; box-shadow: 0 6px 20px rgba(2,6,23,0.06); margin-bottom:16px; }
-input, textarea, button { display:block; width:100%; margin-top:8px; padding:10px; border-radius:8px; border:1px solid #ddd; }
-button.primary { background:#16a34a; color:#fff; border:0; cursor:pointer; }
-button.danger { background:#ef4444; color:#fff; border:0; cursor:pointer; }
-img.preview { width:160px; height:160px; object-fit:cover; border-radius:10px; border:1px solid #eee; }
+body { font-family: Arial; text-align:center; margin-top:30px; }
+img { max-width:150px; margin-top:10px; }
 </style>
 </head>
 <body>
-<div class="container">
-<h2>لوحة التحكم</h2>
-<button id="logoutBtn">تسجيل خروج</button>
+<h2>داشبورد الادمن</h2>
 
-<div class="card">
-<h3>البيانات الحالية</h3>
-<div id="currentProfile"></div>
-</div>
-
-<div class="card">
-<h3>رفع / تحديث البيانات</h3>
-<form id="uploadForm" enctype="multipart/form-data">
-<label>الاسم (مطلوب)</label>
-<input name="name" id="nameField" required>
-<label>الوصف</label>
-<textarea name="description" id="descField"></textarea>
-<label>صورة (jpg/png) - اختيارية</label>
-<input type="file" name="image" id="imageField" accept=".jpg,.jpeg,.png">
-<button class="primary" type="submit">ارفع / حدّث</button>
-<p id="msg" style="color: #0b5; margin-top:8px;"></p>
+<form id="adminForm">
+  <input type="text" name="name" placeholder="الاسم"><br>
+  <textarea name="description" placeholder="الوصف"></textarea><br>
+  <input type="file" name="image" accept=".jpg"><br>
+  <button type="submit">رفع / تعديل البيانات</button>
 </form>
-</div>
 
-<div class="card">
-<h3>الزوار</h3>
-<ul id="visitorsList"></ul>
-</div>
-</div>
+<div id="status" style="margin-top:20px;"></div>
 
 <script>
-async function fetchProfile(){
-  try{
-    const resProfile = await fetch('/api/admin/profile');
-    const profile = await resProfile.json();
-    const dataJson = await fetch('data.json').then(r=>r.json());
+const token = localStorage.getItem('token');
+if(!token) window.location.href='/login';
 
-    let html = '';
-    if(profile.exists){
-      html += `<h4>${profile.data.name || ''}</h4>`;
-      html += `<p>${profile.data.description || ''}</p>`;
-    }
-    if(dataJson.imageBase64){
-      html += `<img class="preview" src="data:${dataJson.imageMime};base64,${dataJson.imageBase64}" alt="صورة الادمن">`;
-    }
-    document.getElementById('currentProfile').innerHTML = html;
-
-    if(profile.exists){
-      document.getElementById('nameField').value = profile.data.name || '';
-      document.getElementById('descField').value = profile.data.description || '';
-    }
-  }catch(err){ console.error(err); }
-}
-
-async function fetchVisitors(){
-  try{
-    const res = await fetch('/api/admin/visitors');
-    const data = await res.json();
-    const ul = document.getElementById('visitorsList');
-    ul.innerHTML = data.visitors.map(v=>`<li>${v.name} - ${v.createdAt ? new Date(v.createdAt).toLocaleString() : ''}</li>`).join('');
-  }catch(err){ console.error(err); }
-}
-
-document.getElementById('uploadForm').addEventListener('submit', async e=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const res = await fetch('/api/admin/profile',{method:'POST', body: fd});
-  const j = await res.json();
-  if(res.ok){
-    document.getElementById('msg').textContent = 'تم التحديث بنجاح';
-    fetchProfile();
-    fetchVisitors();
-    setTimeout(()=>document.getElementById('msg').textContent='',3000);
-  } else {
-    alert(j.error || 'حدث خطأ');
+async function fetchData() {
+  const res = await fetch('/api/data');
+  const data = await res.json();
+  if(data.name) {
+    document.getElementById('status').innerHTML = `
+      <h3>البيانات الحالية:</h3>
+      <p>الاسم: ${data.name}</p>
+      <p>الوصف: ${data.description}</p>
+      ${data.imageUrl ? `<img src="${data.imageUrl}"/>` : ''}
+      <p>اخر تحديث: ${data.updatedAt}</p>
+    `;
   }
-});
+}
+fetchData();
 
-document.getElementById('logoutBtn').addEventListener('click', async ()=>{
-  await fetch('/api/logout',{method:'POST'});
-  window.location='/login';
-});
+document.getElementById('adminForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
 
-// عند تحميل الصفحة
-fetchProfile();
-fetchVisitors();
+  const res = await fetch('/api/data', {
+    method: 'POST',
+    headers: { 'Authorization': token },
+    body: formData
+  });
+  if(res.ok) {
+    alert('تم رفع البيانات');
+    fetchData();
+  } else alert('حصل خطأ');
+}
 </script>
 </body>
 </html>
