@@ -39,6 +39,7 @@ const db = admin.firestore();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(express.static(__dirname)); // ليتمكن السيرفر من قراءة data.json
 
 // Serve HTML
 app.get('/', (req,res)=>res.sendFile(path.join(__dirname,'index.html')));
