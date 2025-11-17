@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>تسجيل دخول</title>
+  <style>
+    body { font-family: Arial, sans-serif; direction: rtl; text-align: right; padding: 24px; background: #f2f6fb; }
+    .card { max-width:420px; margin:60px auto; background:#fff; padding:20px; border-radius:12px; box-shadow:0 8px 30px rgba(2,6,23,0.06); }
+    label, input, button { display:block; width:100%; margin-top:8px; }
+    input { padding:10px; border-radius:8px; border:1px solid #ddd; }
+    button { margin-top:12px; padding:10px; border-radius:8px; border:0; background:#0ea5e9; color:white; cursor:pointer; }
+    .note { margin-top:10px; font-size:13px; color:#475569; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>تسجيل دخول للداشبورد</h2>
+    <form id="loginForm">
+      <label for="user">اسم المستخدم</label>
+      <input id="user" name="username" required />
+      <label for="pass">كلمة المرور</label>
+      <input id="pass" name="password" type="password" required />
+      <button type="submit">دخول</button>
+    </form>
+    <p class="note">مُحمي بواسطة JWT. بيانات الدخول محفوظة في ملف .env على السيرفر.</p>
+    <p id="error" style="color:#b91c1c;"></p>
+  </div>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('user').value.trim();
+      const password = document.getElementById('pass').value;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ username, password })
+      });
+      if (res.ok) {
+        // token is in httpOnly cookie; redirect to dashboard
+        window.location.href = '/dashboard';
+      } else {
+        const j = await res.json().catch(()=>({error:'خطأ'}));
+        document.getElementById('error').textContent = j.error || 'خطأ في تسجيل الدخول';
+      }
+    });
+  </script>
+</body>
+</html>
