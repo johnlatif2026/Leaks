@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>الصفحة الرئيسية</title>
+  <style>
+    body { font-family: Arial, sans-serif; direction: rtl; text-align: right; padding: 24px; background: #f6f9fc; color:#111; }
+    .card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 18px rgba(15,23,42,0.08); max-width:800px; margin: 18px auto; }
+    h1 { margin-top:0; }
+    label, input, textarea, button { display:block; width:100%; margin-top:8px; }
+    input { padding:10px; border-radius:8px; border:1px solid #ddd; }
+    button { margin-top:12px; padding:10px; border-radius:8px; border:0; background:#2563eb; color:#fff; cursor:pointer; }
+    .admin-profile { margin-top:18px; display:flex; gap:16px; align-items:center; }
+    .admin-profile img { width:120px; height:120px; object-fit:cover; border-radius:12px; border:1px solid #eee; }
+    .visitor-name { margin-top:10px; font-weight:600; color:#0f172a; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>أهلاً بك</h1>
+    <p>ادخل اسمك عشان تواصل التصفح</p>
+
+    <form id="visitorForm">
+      <label for="name">الاسم (مطلوب)</label>
+      <input id="name" name="name" required placeholder="اكتب اسمك هنا" />
+      <button type="submit">دخول</button>
+    </form>
+
+    <div id="greeting" style="display:none;">
+      <p class="visitor-name">مرحباً، <span id="visitorNameText"></span></p>
+      <p>الصفحة الرئيسية:</p>
+    </div>
+
+    <div id="adminSection"></div>
+  </div>
+
+  <script>
+    async function fetchProfile() {
+      const res = await fetch('/api/public/profile');
+      const json = await res.json();
+      return json;
+    }
+
+    function renderProfile(data) {
+      const container = document.getElementById('adminSection');
+      if (!data.exists) {
+        container.innerHTML = '<p>لا توجد بيانات للعرض بعد.</p>';
+        return;
+      }
+      const d = data.data;
+      const uploadedAt = d.updatedAt ? new Date(d.updatedAt._seconds * 1000).toLocaleString() : 'غير معروف';
+      container.innerHTML = `
+        <div class="admin-profile">
+          ${d.imageUrl ? `<img src="${d.imageUrl}" alt="صورة الإدارة">` : ''}
+          <div>
+            <h3>${d.name || ''}</h3>
+            <p>${d.description || ''}</p>
+            <small>أُنشئت/آخر تعديل: ${uploadedAt}</small>
+          </div>
+        </div>
+      `;
+    }
+
+    document.getElementById('visitorForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('name').value.trim();
+      if (!name) return alert('الاسم مطلوب');
+      const res = await fetch('/api/visitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({error:'error'}));
+        return alert(err.error || 'حدث خطأ');
+      }
+      // show greeting and set visitor name visible
+      document.getElementById('visitorNameText').textContent = name;
+      document.getElementById('greeting').style.display = 'block';
+      document.getElementById('visitorForm').style.display = 'none';
+      // optionally keep name in localStorage
+      localStorage.setItem('visitorName', name);
+    });
+
+    // If name exists in localStorage show greeting
+    const saved = localStorage.getItem('visitorName');
+    if (saved) {
+      document.getElementById('visitorNameText').textContent = saved;
+      document.getElementById('greeting').style.display = 'block';
+      document.getElementById('visitorForm').style.display = 'none';
+    }
+
+    // load admin profile
+    fetchProfile().then(renderProfile).catch(err => {
+      document.getElementById('adminSection').innerHTML = '<p>فشل تحميل بيانات الادمن.</p>';
+      console.error(err);
+    });
+  </script>
+</body>
+</html>
