@@ -74,7 +74,22 @@ app.post('/api/visitor', async (req,res)=>{
     });
     res.json({success:true,id:docRef.id});
   } catch(err){
-    console.error(err);
+    console.error('Visitor save error:', err);
+    res.status(500).json({error:'server error'});
+  }
+});
+
+// Fetch all visitors (for dashboard)
+app.get('/api/admin/visitors', checkAuthApi, async (req,res)=>{
+  try{
+    const snap = await db.collection('visitors').orderBy('createdAt','desc').get();
+    const visitors = snap.docs.map(doc=>{
+      const d = doc.data();
+      return { id: doc.id, name: d.name, createdAt: d.createdAt?d.createdAt.toDate() : null };
+    });
+    res.json({visitors});
+  } catch(err){
+    console.error('Visitors fetch error:', err);
     res.status(500).json({error:'server error'});
   }
 });
@@ -120,7 +135,7 @@ app.get('/api/admin/profile', checkAuthApi, async (req,res)=>{
   }
 });
 
-// Upload/update profile
+// Upload/update profile (accept JPG + PNG)
 app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,res)=>{
   try{
     const {name,description} = req.body;
@@ -134,21 +149,25 @@ app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,
 
     if(req.file){
       const file = req.file;
-      const mimetype = file.mimetype.toLowerCase();
-      if(!['image/jpeg','image/jpg','image/pjpeg'].includes(mimetype))
-        return res.status(400).json({error:'Only JPG allowed'});
+      const mimetype = (file.mimetype||'').toLowerCase();
+      if(!['image/jpeg','image/jpg','image/pjpeg','image/png'].includes(mimetype))
+        return res.status(400).json({error:'Only JPG/PNG allowed'});
 
-      const filename = `admin-profile-${Date.now()}.jpg`;
+      const ext = mimetype.includes('png') ? 'png' : 'jpg';
+      const filename = `admin-profile-${Date.now()}.${ext}`;
       const fileRef = bucket.file(filename);
 
       try{
-        await fileRef.save(file.buffer,{metadata:{contentType:mimetype},public:true});
+        await fileRef.save(file.buffer,{
+          metadata:{contentType:mimetype},
+          public:true
+        });
         await fileRef.makePublic();
         dataToSave.imageUrl = `https://storage.googleapis.com/${bucket.name}/${filename}`;
         dataToSave.imageName = filename;
       } catch(err){
         console.error('Firebase Storage upload error:', err);
-        return res.status(500).json({error:'فشل رفع الصورة',details:err.message});
+        return res.status(500).json({error:'فشل رفع الصورة', details: err.message});
       }
     }
 
@@ -157,7 +176,7 @@ app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,
     res.json({success:true,data:saved.data()});
 
   } catch(err){
-    console.error(err);
+    console.error('Profile save error:', err);
     res.status(500).json({error:'server error',details:err.message});
   }
 });
@@ -178,29 +197,9 @@ app.delete('/api/admin/profile', checkAuthApi, async (req,res)=>{
     await profileRef.delete();
     res.json({success:true});
   } catch(err){
-    console.error(err);
-    res.status(500).json({error:'server error'});
-  }
-});
-
-// Update profile fields (PUT)
-app.put('/api/admin/profile', checkAuthApi, async (req,res)=>{
-  try{
-    const {name,description} = req.body||{};
-    if(!name && !description) return res.status(400).json({error:'nothing to update'});
-    const profileRef = db.collection('admin').doc('profile');
-    const updateData = {};
-    if(name) updateData.name=name;
-    if(description!==undefined) updateData.description=description;
-    updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
-    await profileRef.set(updateData,{merge:true});
-    const doc = await profileRef.get();
-    res.json({success:true,data:doc.data()});
-  } catch(err){
-    console.error(err);
+    console.error('Profile delete error:', err);
     res.status(500).json({error:'server error'});
   }
 });
 
 app.listen(PORT,()=>console.log(`Server running on port ${PORT}`));
-      
