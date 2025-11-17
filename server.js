@@ -1,169 +1,92 @@
-require('dotenv').config();
 const express = require('express');
-const path = require('path');
-const cookieParser = require('cookie-parser');
+const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
+const dotenv = require('dotenv');
 const multer = require('multer');
-const fs = require('fs');
 const admin = require('firebase-admin');
+const path = require('path');
 
+dotenv.config();
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
-const PORT = process.env.PORT || 3000;
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 
-const ADMIN_USER = process.env.ADMIN_USER || 'admin';
-const ADMIN_PASS = process.env.ADMIN_PASS || 'password';
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
-
-// Initialize Firebase
-if (!process.env.FIREBASE_CONFIG) {
-  console.error("FIREBASE_CONFIG not set in .env");
-  process.exit(1);
-}
-
-let firebaseConfig;
-try {
-  firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
-} catch(e){
-  console.error("Failed to parse FIREBASE_CONFIG JSON:", e.message);
-  process.exit(1);
-}
-
+// Firebase
 admin.initializeApp({
-  credential: admin.credential.cert(firebaseConfig)
+  credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_CONFIG))
 });
-
 const db = admin.firestore();
+const storage = admin.storage().bucket();
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
-app.use(express.static(__dirname)); // ليتمكن السيرفر من قراءة data.json
+// Multer للإرتفاع الصور
+const upload = multer({ storage: multer.memoryStorage() });
 
-// Serve HTML
-app.get('/', (req,res)=>res.sendFile(path.join(__dirname,'index.html')));
-app.get('/login', (req,res)=>res.sendFile(path.join(__dirname,'login.html')));
-app.get('/dashboard', checkAuthRedirect, (req,res)=>res.sendFile(path.join(__dirname,'dashboard.html')));
+// Middleware للتحقق من JWT
+function authenticateToken(req, res, next) {
+  const token = req.headers['authorization'];
+  if (!token) return res.redirect('/login.html');
 
-// JWT auth middleware
-function checkAuthRedirect(req,res,next){
-  const token = req.cookies.token;
-  if(!token) return res.redirect('/login');
-  try { jwt.verify(token, JWT_SECRET); next(); } 
-  catch(e){ return res.redirect('/login'); }
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) return res.redirect('/login.html');
+    req.user = user;
+    next();
+  });
 }
 
-function checkAuthApi(req,res,next){
-  const token = req.cookies.token;
-  if(!token) return res.status(401).json({error:'not authenticated'});
-  try { req.user = jwt.verify(token, JWT_SECRET); next(); }
-  catch(e){ return res.status(401).json({error:'invalid token'}); }
-}
+// صفحات HTML ثابتة
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
+app.get('/dashboard', authenticateToken, (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
 
-// Visitors API
-app.post('/api/visitor', async (req,res)=>{
-  const name = (req.body.name||'').trim();
-  if(!name) return res.status(400).json({error:'اسم الزائر مطلوب'});
+// تسجيل دخول الادمن
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === process.env.USERNAME && password === process.env.PASSWORD) {
+    const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '2h' });
+    res.json({ token });
+  } else {
+    res.status(401).json({ message: 'Invalid credentials' });
+  }
+});
+
+// إضافة/تعديل بيانات الادمن
+app.post('/api/data', authenticateToken, upload.single('image'), async (req, res) => {
   try {
-    const docRef = await db.collection('visitors').add({
-      name,
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-    res.json({success:true,id:docRef.id});
-  } catch(err){
-    console.error('Visitor save error:', err);
-    res.status(500).json({error:'server error', details: err.message, stack: err.stack});
-  }
-});
+    const { name, description } = req.body;
+    let imageUrl = null;
 
-app.get('/api/admin/visitors', checkAuthApi, async (req,res)=>{
-  try{
-    const snap = await db.collection('visitors').orderBy('createdAt','desc').get();
-    const visitors = snap.docs.map(doc=>{
-      const d = doc.data();
-      return { id: doc.id, name: d.name, createdAt: d.createdAt ? d.createdAt.toDate() : null };
-    });
-    res.json({visitors});
-  } catch(err){
-    console.error('Visitors fetch error:', err);
-    res.status(500).json({error:'server error', details: err.message, stack: err.stack});
-  }
-});
-
-// Public profile API
-app.get('/api/public/profile', async (req,res)=>{
-  try{
-    const doc = await db.collection('admin').doc('profile').get();
-    if(!doc.exists) return res.json({exists:false,data:null});
-    res.json({exists:true,data:doc.data()});
-  } catch(err){
-    console.error(err);
-    res.status(500).json({error:'server error', details: err.message, stack: err.stack});
-  }
-});
-
-// Login/Logout
-app.post('/api/login',(req,res)=>{
-  const {username,password} = req.body||{};
-  if(!username||!password) return res.status(400).json({error:'invalid credentials'});
-  if(username===ADMIN_USER && password===ADMIN_PASS){
-    const token = jwt.sign({user:username}, JWT_SECRET, {expiresIn:'12h'});
-    res.cookie('token', token, {httpOnly:true,sameSite:'lax'});
-    return res.json({success:true});
-  } else return res.status(401).json({error:'wrong credentials'});
-});
-
-app.post('/api/logout',(req,res)=>{
-  res.clearCookie('token');
-  res.json({success:true});
-});
-
-// Admin profile routes
-app.get('/api/admin/profile', checkAuthApi, async (req,res)=>{
-  try{
-    const doc = await db.collection('admin').doc('profile').get();
-    if(!doc.exists) return res.json({exists:false,data:null});
-    res.json({exists:true,data:doc.data()});
-  } catch(err){
-    console.error(err);
-    res.status(500).json({error:'server error', details: err.message, stack: err.stack});
-  }
-});
-
-// Upload/update profile (Firestore for text, data.json for image)
-app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,res)=>{
-  try{
-    const {name, description} = req.body;
-    if(!name) return res.status(400).json({error:'name required'});
-
-    // تحديث Firestore للنصوص
-    const profileRef = db.collection('admin').doc('profile');
-    await profileRef.set({
-      name,
-      description: description || '',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, {merge:true});
-
-    // تحديث الصورة في data.json
-    const filePath = path.join(__dirname, 'data.json');
-    let imageData = { imageBase64: "", imageMime: "" };
-    if(req.file){
-      imageData.imageBase64 = req.file.buffer.toString('base64');
-      imageData.imageMime = req.file.mimetype;
+    if (req.file) {
+      const file = storage.file(`images/${Date.now()}-${req.file.originalname}`);
+      await file.save(req.file.buffer, { contentType: req.file.mimetype });
+      imageUrl = `https://storage.googleapis.com/${storage.name}/${file.name}`;
     }
-    fs.writeFileSync(filePath, JSON.stringify(imageData, null, 2));
 
-    res.json({success:true, message: 'تم التحديث بنجاح'});
-  } catch(err){
-    console.error('Profile update error full:', err);
-    res.status(500).json({
-      error:'server error',
-      details: err.message,
-      stack: err.stack
+    const docRef = db.collection('adminData').doc('main');
+    await docRef.set({
+      name,
+      description,
+      imageUrl,
+      updatedAt: new Date().toISOString()
     });
+
+    res.json({ message: 'Data uploaded successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT,()=>console.log(`Server running on port ${PORT}`));
-        
+// جلب بيانات الادمن للصفحة الرئيسية
+app.get('/api/data', async (req, res) => {
+  const doc = await db.collection('adminData').doc('main').get();
+  if (!doc.exists) return res.json({});
+  res.json(doc.data());
+});
+
+// اعادة توجيه اذا حاول حد يدخل /dashboard بدون JWT
+app.use((req, res, next) => {
+  if (req.path === '/dashboard') return res.redirect('/login');
+  next();
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
