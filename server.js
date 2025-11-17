@@ -44,6 +44,7 @@ app.use(cookieParser());
 // Serve HTML files
 app.get('/', (req,res)=>res.sendFile(path.join(__dirname,'index.html')));
 app.get('/login', (req,res)=>res.sendFile(path.join(__dirname,'login.html')));
+app.get('/dashboard', checkAuthRedirect, (req,res)=>res.sendFile(path.join(__dirname,'dashboard.html')));
 
 // JWT auth middleware
 function checkAuthRedirect(req,res,next){
@@ -59,9 +60,6 @@ function checkAuthApi(req,res,next){
   try { req.user = jwt.verify(token, JWT_SECRET); next(); }
   catch(e){ return res.status(401).json({error:'invalid token'}); }
 }
-
-// Dashboard route
-app.get('/dashboard', checkAuthRedirect, (req,res)=>res.sendFile(path.join(__dirname,'dashboard.html')));
 
 // Visitors API
 app.post('/api/visitor', async (req,res)=>{
@@ -123,7 +121,7 @@ app.post('/api/logout',(req,res)=>{
   res.json({success:true});
 });
 
-// Admin API
+// Admin profile routes
 app.get('/api/admin/profile', checkAuthApi, async (req,res)=>{
   try{
     const doc = await db.collection('admin').doc('profile').get();
@@ -135,7 +133,7 @@ app.get('/api/admin/profile', checkAuthApi, async (req,res)=>{
   }
 });
 
-// Upload/update profile (accept JPG + PNG)
+// Upload/update profile
 app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,res)=>{
   try{
     const {name,description} = req.body;
@@ -166,8 +164,12 @@ app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,
         dataToSave.imageUrl = `https://storage.googleapis.com/${bucket.name}/${filename}`;
         dataToSave.imageName = filename;
       } catch(err){
-        console.error('Firebase Storage upload error:', err);
-        return res.status(500).json({error:'فشل رفع الصورة', details: err.message});
+        console.error('Firebase Storage upload error full:', err);
+        return res.status(500).json({
+          error:'فشل رفع الصورة',
+          details: err.message,
+          stack: err.stack
+        });
       }
     }
 
@@ -203,3 +205,4 @@ app.delete('/api/admin/profile', checkAuthApi, async (req,res)=>{
 });
 
 app.listen(PORT,()=>console.log(`Server running on port ${PORT}`));
+                          
