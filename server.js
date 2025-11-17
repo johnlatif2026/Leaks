@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const admin = require('firebase-admin');
+const fetch = require('node-fetch'); // لإرسال رسائل تيليجرام
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -13,6 +14,8 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'password';
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // Initialize Firebase
 if (!process.env.FIREBASE_CONFIG) {
@@ -58,6 +61,21 @@ function checkAuthApi(req,res,next){
   if(!token) return res.status(401).json({error:'not authenticated'});
   try { req.user = jwt.verify(token, JWT_SECRET); next(); }
   catch(e){ return res.status(401).json({error:'invalid token'}); }
+}
+
+// Function to send Telegram message
+async function sendTelegramMessage(message) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message })
+    });
+  } catch(err) {
+    console.error('Telegram send error:', err);
+  }
 }
 
 // Dashboard route
@@ -106,13 +124,18 @@ app.get('/api/public/profile', async (req,res)=>{
   }
 });
 
-// Login API
+// Login API with Telegram notification
 app.post('/api/login',(req,res)=>{
   const {username,password} = req.body||{};
   if(!username||!password) return res.status(400).json({error:'invalid credentials'});
+
   if(username===ADMIN_USER && password===ADMIN_PASS){
     const token = jwt.sign({user:username}, JWT_SECRET, {expiresIn:'12h'});
     res.cookie('token', token, {httpOnly:true,sameSite:'lax'});
+
+    // إرسال رسالة تيليجرام
+    sendTelegramMessage(`تم تسجيل دخول المستخدم: ${username} في ${new Date().toLocaleString()} من IP: ${req.ip}`);
+
     return res.json({success:true});
   } else return res.status(401).json({error:'wrong credentials'});
 });
@@ -203,4 +226,3 @@ app.delete('/api/admin/profile', checkAuthApi, async (req,res)=>{
 });
 
 app.listen(PORT,()=>console.log(`Server running on port ${PORT}`));
-        
