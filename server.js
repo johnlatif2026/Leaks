@@ -4,6 +4,7 @@ const path = require('path');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
+const fs = require('fs');
 const admin = require('firebase-admin');
 
 const app = express();
@@ -29,19 +30,17 @@ try {
 }
 
 admin.initializeApp({
-  credential: admin.credential.cert(firebaseConfig),
-  storageBucket: firebaseConfig.project_id + ".appspot.com"
+  credential: admin.credential.cert(firebaseConfig)
 });
 
 const db = admin.firestore();
-const bucket = admin.storage().bucket();
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Serve HTML files
+// Serve HTML
 app.get('/', (req,res)=>res.sendFile(path.join(__dirname,'index.html')));
 app.get('/login', (req,res)=>res.sendFile(path.join(__dirname,'login.html')));
 app.get('/dashboard', checkAuthRedirect, (req,res)=>res.sendFile(path.join(__dirname,'dashboard.html')));
@@ -77,13 +76,12 @@ app.post('/api/visitor', async (req,res)=>{
   }
 });
 
-// Fetch all visitors (for dashboard)
 app.get('/api/admin/visitors', checkAuthApi, async (req,res)=>{
   try{
     const snap = await db.collection('visitors').orderBy('createdAt','desc').get();
     const visitors = snap.docs.map(doc=>{
       const d = doc.data();
-      return { id: doc.id, name: d.name, createdAt: d.createdAt?d.createdAt.toDate() : null };
+      return { id: doc.id, name: d.name, createdAt: d.createdAt ? d.createdAt.toDate() : null };
     });
     res.json({visitors});
   } catch(err){
@@ -104,7 +102,7 @@ app.get('/api/public/profile', async (req,res)=>{
   }
 });
 
-// Login API
+// Login/Logout
 app.post('/api/login',(req,res)=>{
   const {username,password} = req.body||{};
   if(!username||!password) return res.status(400).json({error:'invalid credentials'});
@@ -115,7 +113,6 @@ app.post('/api/login',(req,res)=>{
   } else return res.status(401).json({error:'wrong credentials'});
 });
 
-// Logout
 app.post('/api/logout',(req,res)=>{
   res.clearCookie('token');
   res.json({success:true});
@@ -133,76 +130,34 @@ app.get('/api/admin/profile', checkAuthApi, async (req,res)=>{
   }
 });
 
-// Upload/update profile
+// Upload/update profile (text to Firestore, image to data.json)
 app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,res)=>{
   try{
-    const {name,description} = req.body;
+    const {name, description} = req.body;
     if(!name) return res.status(400).json({error:'name required'});
+
+    // تحديث النصوص في Firestore
     const profileRef = db.collection('admin').doc('profile');
-    const dataToSave = {
+    await profileRef.set({
       name,
-      description: description||'',
+      description: description || '',
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
+    }, {merge:true});
 
+    // تحديث الصورة في data.json
+    const filePath = path.join(__dirname, 'data.json');
+    let imageData = { imageBase64: "", imageMime: "" };
     if(req.file){
-      const file = req.file;
-      const mimetype = (file.mimetype||'').toLowerCase();
-      if(!['image/jpeg','image/jpg','image/pjpeg','image/png'].includes(mimetype))
-        return res.status(400).json({error:'Only JPG/PNG allowed'});
-
-      const ext = mimetype.includes('png') ? 'png' : 'jpg';
-      const filename = `admin-profile-${Date.now()}.${ext}`;
-      const fileRef = bucket.file(filename);
-
-      try{
-        await fileRef.save(file.buffer,{
-          metadata:{contentType:mimetype},
-          public:true
-        });
-        await fileRef.makePublic();
-        dataToSave.imageUrl = `https://storage.googleapis.com/${bucket.name}/${filename}`;
-        dataToSave.imageName = filename;
-      } catch(err){
-        console.error('Firebase Storage upload error full:', err);
-        return res.status(500).json({
-          error:'فشل رفع الصورة',
-          details: err.message,
-          stack: err.stack
-        });
-      }
+      imageData.imageBase64 = req.file.buffer.toString('base64');
+      imageData.imageMime = req.file.mimetype;
     }
+    fs.writeFileSync(filePath, JSON.stringify(imageData, null, 2));
 
-    await profileRef.set(dataToSave,{merge:true});
-    const saved = await profileRef.get();
-    res.json({success:true,data:saved.data()});
-
+    res.json({success:true, message: 'تم التحديث بنجاح'});
   } catch(err){
-    console.error('Profile save error:', err);
-    res.status(500).json({error:'server error',details:err.message});
-  }
-});
-
-// Delete profile
-app.delete('/api/admin/profile', checkAuthApi, async (req,res)=>{
-  try{
-    const profileRef = db.collection('admin').doc('profile');
-    const doc = await profileRef.get();
-    if(!doc.exists) return res.status(404).json({error:'not found'});
-    const data = doc.data();
-
-    if(data && data.imageName){
-      try{ await bucket.file(data.imageName).delete(); } 
-      catch(e){ console.warn('Could not delete image',e.message); }
-    }
-
-    await profileRef.delete();
-    res.json({success:true});
-  } catch(err){
-    console.error('Profile delete error:', err);
-    res.status(500).json({error:'server error'});
+    console.error('Profile update error:', err);
+    res.status(500).json({error:'server error', details: err.message});
   }
 });
 
 app.listen(PORT,()=>console.log(`Server running on port ${PORT}`));
-                          
