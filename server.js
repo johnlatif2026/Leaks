@@ -72,7 +72,7 @@ app.post('/api/visitor', async (req,res)=>{
     res.json({success:true,id:docRef.id});
   } catch(err){
     console.error('Visitor save error:', err);
-    res.status(500).json({error:'server error'});
+    res.status(500).json({error:'server error', details: err.message, stack: err.stack});
   }
 });
 
@@ -86,7 +86,7 @@ app.get('/api/admin/visitors', checkAuthApi, async (req,res)=>{
     res.json({visitors});
   } catch(err){
     console.error('Visitors fetch error:', err);
-    res.status(500).json({error:'server error'});
+    res.status(500).json({error:'server error', details: err.message, stack: err.stack});
   }
 });
 
@@ -98,7 +98,7 @@ app.get('/api/public/profile', async (req,res)=>{
     res.json({exists:true,data:doc.data()});
   } catch(err){
     console.error(err);
-    res.status(500).json({error:'server error'});
+    res.status(500).json({error:'server error', details: err.message, stack: err.stack});
   }
 });
 
@@ -126,17 +126,17 @@ app.get('/api/admin/profile', checkAuthApi, async (req,res)=>{
     res.json({exists:true,data:doc.data()});
   } catch(err){
     console.error(err);
-    res.status(500).json({error:'server error'});
+    res.status(500).json({error:'server error', details: err.message, stack: err.stack});
   }
 });
 
-// Upload/update profile (text to Firestore, image to data.json)
+// Upload/update profile (Firestore for text, data.json for image)
 app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,res)=>{
   try{
     const {name, description} = req.body;
     if(!name) return res.status(400).json({error:'name required'});
 
-    // تحديث النصوص في Firestore
+    // تحديث Firestore للنصوص
     const profileRef = db.collection('admin').doc('profile');
     await profileRef.set({
       name,
@@ -155,8 +155,12 @@ app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,
 
     res.json({success:true, message: 'تم التحديث بنجاح'});
   } catch(err){
-    console.error('Profile update error:', err);
-    res.status(500).json({error:'server error', details: err.message});
+    console.error('Profile update error full:', err);
+    res.status(500).json({
+      error:'server error',
+      details: err.message,
+      stack: err.stack
+    });
   }
 });
 
