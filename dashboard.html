@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Dashboard - Admin</title>
+  <style>
+    body { font-family: Arial, sans-serif; direction: rtl; padding:20px; background:#f0f4f8; }
+    .container { max-width:900px; margin:20px auto; }
+    .card { background:#fff; padding:18px; border-radius:12px; box-shadow: 0 6px 20px rgba(2,6,23,0.06); margin-bottom:16px; }
+    input, textarea, button { display:block; width:100%; margin-top:8px; padding:10px; border-radius:8px; border:1px solid #ddd; }
+    .row { display:flex; gap:12px; }
+    .col { flex:1; }
+    button.primary { background:#16a34a; color:#fff; border:0; cursor:pointer; }
+    button.danger { background:#ef4444; color:#fff; border:0; cursor:pointer; }
+    img.preview { width:160px; height:160px; object-fit:cover; border-radius:10px; border:1px solid #eee; }
+    small { color:#475569; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2>لوحة التحكم</h2>
+      <div>
+        <button id="logoutBtn">تسجيل خروج</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>البيانات الحالية</h3>
+      <div id="current"></div>
+    </div>
+
+    <div class="card">
+      <h3>رفع / تحديث البيانات</h3>
+      <form id="uploadForm" enctype="multipart/form-data">
+        <label>الاسم (مطلوب)</label>
+        <input name="name" id="nameField" required />
+        <label>الوصف</label>
+        <textarea name="description" id="descField"></textarea>
+        <label>صورة (jpg) - اختيارية</label>
+        <input type="file" name="image" id="imageField" accept=".jpg,.jpeg" />
+        <div style="margin-top:10px; display:flex; gap:10px;">
+          <button class="primary" type="submit">ارفع / حدّث</button>
+          <button class="danger" id="deleteBtn" type="button">احذف</button>
+        </div>
+        <p id="msg" style="color: #0b5; margin-top:8px;"></p>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    async function fetchProfile() {
+      const res = await fetch('/api/admin/profile');
+      if (!res.ok) {
+        if (res.status === 401) { window.location='/login'; return; }
+        document.getElementById('current').innerText = 'فشل في جلب البيانات';
+        return;
+      }
+      const j = await res.json();
+      if (!j.exists) {
+        document.getElementById('current').innerHTML = '<p>لا توجد بيانات مرفوعة بعد.</p>';
+        return;
+      }
+      const d = j.data;
+      const updatedAt = d.updatedAt ? new Date(d.updatedAt._seconds*1000).toLocaleString() : 'غير معروف';
+      document.getElementById('current').innerHTML = `
+        <div style="display:flex; gap:12px; align-items:center;">
+          ${d.imageUrl ? `<img src="${d.imageUrl}" class="preview" alt="صورة">` : ''}
+          <div>
+            <h4>${d.name || ''}</h4>
+            <p>${d.description || ''}</p>
+            <small>أخر تعديل: ${updatedAt}</small>
+          </div>
+        </div>
+      `;
+      // prefill form fields
+      document.getElementById('nameField').value = d.name || '';
+      document.getElementById('descField').value = d.description || '';
+    }
+
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const fd = new FormData(form);
+      const res = await fetch('/api/admin/profile', {
+        method: 'POST',
+        body: fd
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        alert(j.error || 'حدث خطأ');
+        return;
+      }
+      document.getElementById('msg').textContent = 'تم الرفع/التحديث بنجاح';
+      fetchProfile();
+      setTimeout(()=>document.getElementById('msg').textContent='', 3000);
+    });
+
+    document.getElementById('deleteBtn').addEventListener('click', async () => {
+      if (!confirm('هل أنت متأكد من الحذف؟')) return;
+      const res = await fetch('/api/admin/profile', { method: 'DELETE' });
+      const j = await res.json();
+      if (!res.ok) {
+        alert(j.error || 'فشل في الحذف');
+        return;
+      }
+      alert('تم الحذف');
+      fetchProfile();
+      document.getElementById('nameField').value = '';
+      document.getElementById('descField').value = '';
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location = '/login';
+    });
+
+    // On load
+    fetchProfile();
+  </script>
+</body>
+</html>
