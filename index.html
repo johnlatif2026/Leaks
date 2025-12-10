@@ -1,64 +1,93 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="ar">
 <head>
-  <meta charset="utf-8" />
-  <title>Homepage</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin:auto; }
-    .post { border:1px solid #ddd; padding:10px; margin:10px 0; border-radius:6px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leakes - الصفحة الرئيسية</title>
+<style>
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #f4f6f8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  margin: 0;
+}
+.container {
+  background: #fff;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  text-align: center;
+  width: 90%;
+  max-width: 400px;
+}
+input {
+  width: 100%;
+  padding: 12px;
+  margin: 10px 0;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 16px;
+}
+button {
+  width: 100%;
+  padding: 12px;
+  background: #007bff;
+  color: #fff;
+  font-size: 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+button:hover {
+  background: #0056b3;
+}
+#status {
+  margin-top: 15px;
+  font-size: 14px;
+  color: green;
+}
+</style>
 </head>
 <body>
-  <h1 id="myname">اكتب اسمك</h1>
+<div class="container">
+<h1>أهلا بك في Leaks</h1>
+<p>اكتب اسمك للمتابعة:</p>
+<input type="text" id="username" placeholder="اسمك">
+<button id="submitBtn">إرسال</button>
+<p id="status"></p>
+</div>
 
-  <div>
-    <label>اسمك: <input id="nameInput" /></label>
-    <button id="sendBtn">دخول</button>
-  </div>
+<script>
+document.getElementById('submitBtn').addEventListener('click', async () => {
+  const username = document.getElementById('username').value.trim();
+  if (!username) return alert("اكتب اسمك أولاً");
 
-  <h2>المنشورات</h2>
-  <div id="posts"></div>
+  try {
+    const res = await fetch("/api/notify", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer DEMO_TOKEN"
+      },
+      body: JSON.stringify({ message: `دخل الموقع: ${username}` })
+    });
 
-  <script>
-    // show placeholder name text (static)
-    document.getElementById('myname').textContent = 'أهلاً — اكتب اسمك وأدخل';
-
-    async function sendName() {
-      const name = document.getElementById('nameInput').value.trim();
-      if (!name) return alert('ادخل اسم');
-      await fetch('/api/entry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
-      });
-      document.getElementById('nameInput').value = '';
-      alert('تم الإرسال');
+    const data = await res.json();
+    if (res.ok) {
+      document.getElementById('status').innerText = "تم إرسال اسمك!";
+      document.getElementById('username').value = "";
+    } else {
+      document.getElementById('status').innerText = data.error || "حدث خطأ";
     }
-
-    document.getElementById('sendBtn').addEventListener('click', sendName);
-
-    // load posts
-    async function loadPosts(){
-      const res = await fetch('/api/posts');
-      const j = await res.json();
-      const container = document.getElementById('posts');
-      container.innerHTML = '';
-      if (!j.posts || j.posts.length === 0) { container.innerHTML = '<i>لا توجد منشورات بعد</i>'; return; }
-      j.posts.forEach(p=>{
-        const el = document.createElement('div');
-        el.className = 'post';
-        el.innerHTML = `<strong>${p.title || ''}</strong> <div>${p.section ? 'قسم: ' + p.section : ''}</div>
-                        ${p.imageUrl ? `<img src="${p.imageUrl}" style="max-width:200px" />` : ''}
-                        <p>${p.text || ''}</p>`;
-        container.appendChild(el);
-      });
-    }
-
-    loadPosts();
-
-    // Optionally: poll for new posts every 10s
-    setInterval(loadPosts, 10000);
-  </script>
+  } catch (err) {
+    document.getElementById('status').innerText = "خطأ في الاتصال بالسيرفر";
+  }
+});
+</script>
 </body>
 </html>
