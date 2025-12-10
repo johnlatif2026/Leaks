@@ -1,110 +1,86 @@
-import express from "express";
-import admin from "firebase-admin";
-import jwt from "jsonwebtoken";
-import fetch from "node-fetch";
-import path from "path";
-import { fileURLToPath } from "url";
+require('dotenv').config();
+const express = require('express');
+const bodyParser = require('body-parser');
+const jwt = require('jsonwebtoken');
+const admin = require('firebase-admin');
+const fetch = require('node-fetch');
+const cookieParser = require('cookie-parser');
+const cors = require('cors');
 
 const app = express();
-app.use(express.json());
+app.use(cors());
+app.use(bodyParser.json());
+app.use(cookieParser());
+app.use(express.static(__dirname));
 
-// Firebase Admin Initialization
+const FIREBASE_CONFIG = JSON.parse(process.env.FIREBASE_CONFIG);
 admin.initializeApp({
-  credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_CONFIG))
+  credential: admin.credential.cert(FIREBASE_CONFIG)
 });
 const db = admin.firestore();
 
-// JWT Middleware
+const JWT_SECRET = process.env.JWT_SECRET;
+const ADMIN_USER = process.env.ADMIN_USER;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
 function authMiddleware(req, res, next) {
-  const token = req.headers["authorization"]?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "No token provided" });
+  const token = req.cookies.token || req.headers['authorization']?.split(' ')[1];
+  if (!token) return res.status(401).send('Unauthorized');
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = jwt.verify(token, JWT_SECRET);
     next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
+  } catch (err) {
+    return res.status(401).send('Unauthorized');
   }
 }
 
-// Serve HTML pages directly
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
-});
-
-app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "login.html"));
-});
-
-app.get("/dashboard", authMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "dashboard.html"));
-});
-
-// Login API
-app.post("/api/login", (req, res) => {
+// تسجيل الدخول
+app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
-  if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
-    const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: "2h" });
+  if (username === ADMIN_USER && password === ADMIN_PASSWORD) {
+    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '2h' });
+    res.cookie('token', token, { httpOnly: true });
     return res.json({ token });
   }
-  res.status(401).json({ error: "Invalid credentials" });
+  res.status(401).send('Invalid credentials');
 });
 
-// Notify via Telegram
-app.post("/api/notify", authMiddleware, async (req, res) => {
-  const { message } = req.body;
-  if (!message) return res.status(400).json({ error: "Message required" });
+// استقبال اسم المستخدم من الصفحة الرئيسية
+app.post('/api/enter', async (req, res) => {
+  const { name } = req.body;
+  await db.collection('entries').add({ name, timestamp: Date.now() });
 
-  try {
-    const tgRes = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: process.env.TELEGRAM_CHAT_ID,
-        text: message
-      })
-    });
-    const data = await tgRes.json();
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  // إرسال رسالة تيليجرام
+  fetch(`https://api.telegram.org/bot${process.env.Telegram_TOKEN_ID}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: process.env.Telegram_CHAT_ID,
+      text: `دخل شخص للموقع واسمه: ${name}`
+    })
+  });
+  res.json({ message: 'Welcome ' + name });
 });
 
-// Create Section
-app.post("/api/section", authMiddleware, async (req, res) => {
-  const { name, title, text, image } = req.body;
-  if (!name || !title || !text) return res.status(400).json({ error: "Required fields missing" });
-
-  try {
-    const docRef = await db.collection(name).add({ title, text, image: image || "" });
-    res.json({ id: docRef.id });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// إرسال البيانات من الداشبورد
+app.post('/api/dashboard/data', authMiddleware, async (req, res) => {
+  const { section, title, text, image } = req.body;
+  await db.collection('sections').add({ section, title, text, image, timestamp: Date.now() });
+  res.json({ success: true });
 });
 
-// Get all sections
-app.get("/api/sections", authMiddleware, async (req, res) => {
-  try {
-    const collections = await db.listCollections();
-    const result = [];
-
-    for (const col of collections) {
-      const snapshot = await col.get();
-      snapshot.forEach(doc => {
-        result.push({ collection: col.id, id: doc.id, ...doc.data() });
-      });
-    }
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// جلب البيانات للصفحة الرئيسية
+app.get('/api/data', async (req, res) => {
+  const snapshot = await db.collection('sections').orderBy('timestamp', 'desc').get();
+  const data = snapshot.docs.map(doc => doc.data());
+  res.json(data);
 });
 
-// Default ping route
-app.get("/api/ping", (req, res) => res.send("Server is running ✅"));
+// إنشاء قسم جديد
+app.post('/api/dashboard/section', authMiddleware, async (req, res) => {
+  const { sectionName } = req.body;
+  await db.collection('sections').add({ section: sectionName, timestamp: Date.now() });
+  res.json({ success: true });
+});
 
-export default app;
+app.listen(3000, () => console.log('Server running on port 3000'));
