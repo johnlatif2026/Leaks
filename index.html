@@ -1,100 +1,64 @@
-<!DOCTYPE html>
-<html lang="ar">
+<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>الصفحة الرئيسية</title>
-<style>
-body { font-family: Arial; direction: rtl; padding:20px; background:#f0f4f8; }
-.card { max-width:600px; margin:20px auto; background:#fff; padding:20px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.1); }
-input, button { width:100%; padding:10px; margin-top:10px; border-radius:8px; border:1px solid #ccc; }
-button { background:#2563eb; color:#fff; border:none; cursor:pointer; }
-.section { margin-top:20px; }
-.admin-profile img { width:120px; height:120px; object-fit:cover; border-radius:12px; margin-left:10px; }
-</style>
+  <meta charset="utf-8" />
+  <title>Homepage</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin:auto; }
+    .post { border:1px solid #ddd; padding:10px; margin:10px 0; border-radius:6px; }
+  </style>
 </head>
 <body>
+  <h1 id="myname">اكتب اسمك</h1>
 
-<div class="card">
-<h2>أهلاً بك في الموقع</h2>
-<p>ادخل اسمك لتتمكن من التصفح:</p>
-<form id="visitorForm">
-  <input type="text" id="visitorName" placeholder="اكتب اسمك هنا" required>
-  <button type="submit">دخول</button>
-</form>
+  <div>
+    <label>اسمك: <input id="nameInput" /></label>
+    <button id="sendBtn">دخول</button>
+  </div>
 
-<div id="greeting" class="section" style="display:none;">
-  <p>مرحباً، <span id="nameDisplay"></span></p>
-</div>
+  <h2>المنشورات</h2>
+  <div id="posts"></div>
 
-<div id="adminSection" class="section"></div>
-</div>
+  <script>
+    // show placeholder name text (static)
+    document.getElementById('myname').textContent = 'أهلاً — اكتب اسمك وأدخل';
 
-<script>
-const visitorForm = document.getElementById('visitorForm');
-const greeting = document.getElementById('greeting');
-const nameDisplay = document.getElementById('nameDisplay');
-const adminSection = document.getElementById('adminSection');
+    async function sendName() {
+      const name = document.getElementById('nameInput').value.trim();
+      if (!name) return alert('ادخل اسم');
+      await fetch('/api/entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      document.getElementById('nameInput').value = '';
+      alert('تم الإرسال');
+    }
 
-visitorForm.addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const name = document.getElementById('visitorName').value.trim();
-  if(!name) return alert('الاسم مطلوب');
-  localStorage.setItem('visitorName', name);
-  showGreeting(name);
+    document.getElementById('sendBtn').addEventListener('click', sendName);
 
-  // إرسال الاسم للسيرفر
-  try {
-    await fetch('/api/visitor', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name})
-    });
-  } catch(err){ console.error('Visitor API error',err);}
-});
+    // load posts
+    async function loadPosts(){
+      const res = await fetch('/api/posts');
+      const j = await res.json();
+      const container = document.getElementById('posts');
+      container.innerHTML = '';
+      if (!j.posts || j.posts.length === 0) { container.innerHTML = '<i>لا توجد منشورات بعد</i>'; return; }
+      j.posts.forEach(p=>{
+        const el = document.createElement('div');
+        el.className = 'post';
+        el.innerHTML = `<strong>${p.title || ''}</strong> <div>${p.section ? 'قسم: ' + p.section : ''}</div>
+                        ${p.imageUrl ? `<img src="${p.imageUrl}" style="max-width:200px" />` : ''}
+                        <p>${p.text || ''}</p>`;
+        container.appendChild(el);
+      });
+    }
 
-function showGreeting(name){
-  nameDisplay.textContent = name;
-  greeting.style.display='block';
-  visitorForm.style.display='none';
-  fetchProfile();
-}
+    loadPosts();
 
-// Fetch admin profile
-async function fetchProfile(){
-  try{
-    const res = await fetch('/api/public/profile');
-    const json = await res.json();
-    renderProfile(json);
-  } catch(err){
-    adminSection.innerHTML='<p>فشل تحميل بيانات الادمن.</p>';
-    console.error(err);
-  }
-}
-
-function renderProfile(data){
-  if(!data.exists){
-    adminSection.innerHTML='<p>لا توجد بيانات للعرض بعد.</p>';
-    return;
-  }
-  const d = data.data;
-  const uploadedAt = d.updatedAt ? new Date(d.updatedAt._seconds*1000).toLocaleString() : 'غير معروف';
-  adminSection.innerHTML = `
-    <div class="admin-profile" style="display:flex;align-items:center;">
-      ${d.imageUrl? `<img src="${d.imageUrl}" alt="صورة الادمن">` : ''}
-      <div>
-        <h3>${d.name||''}</h3>
-        <p>${d.description||''}</p>
-        <small>أخر تعديل: ${uploadedAt}</small>
-      </div>
-    </div>
-  `;
-}
-
-// Check localStorage
-const savedName = localStorage.getItem('visitorName');
-if(savedName) showGreeting(savedName);
-</script>
-
+    // Optionally: poll for new posts every 10s
+    setInterval(loadPosts, 10000);
+  </script>
 </body>
 </html>
