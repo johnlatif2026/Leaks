@@ -2,70 +2,27 @@
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>تسجيل الدخول</title>
 <style>
-body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: #eef2f7;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  margin: 0;
-}
-.container {
-  background: #fff;
-  padding: 40px;
-  border-radius: 12px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-  text-align: center;
-  width: 90%;
-  max-width: 400px;
-}
-input {
-  width: 100%;
-  padding: 12px;
-  margin: 10px 0;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  font-size: 16px;
-}
-button {
-  width: 100%;
-  padding: 12px;
-  background: #28a745;
-  color: #fff;
-  font-size: 16px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: 0.3s;
-}
-button:hover {
-  background: #218838;
-}
-#status {
-  margin-top: 15px;
-  font-size: 14px;
-  color: red;
-}
+  body { font-family: Arial, sans-serif; direction: rtl; padding: 20px; background: #f7f7f7; }
+input, button { margin: 5px 0; padding: 8px; }
+button { cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 4px; }
+h1, h2 { color: #333; }
+ul { list-style-type: none; padding: 0; }
+li { background: #fff; margin: 5px 0; padding: 10px; border-radius: 4px; }
 </style>
 </head>
 <body>
-<div class="container">
-<h1>تسجيل الدخول للوحة التحكم</h1>
-<input type="text" id="username" placeholder="اسم المستخدم">
-<input type="password" id="password" placeholder="كلمة المرور">
-<button id="loginBtn">تسجيل الدخول</button>
-<p id="status"></p>
-</div>
+  <h1>تسجيل الدخول</h1>
+  <input type="text" id="username" placeholder="اسم المستخدم">
+  <input type="password" id="password" placeholder="كلمة المرور">
+  <button id="loginBtn">تسجيل الدخول</button>
 
 <script>
-document.getElementById('loginBtn').addEventListener('click', async () => {
-  const username = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value.trim();
-  if (!username || !password) return alert("اكمل جميع الحقول");
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  const username = document.getElementById("username").value;
+  const password = document.getElementById("password").value;
+  if (!username || !password) return alert("اكتب اسم المستخدم وكلمة المرور");
 
   try {
     const res = await fetch("/api/login", {
@@ -73,16 +30,17 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password })
     });
-
     const data = await res.json();
-    if (res.ok) {
+    if (data.token) {
       localStorage.setItem("jwt", data.token);
+      alert("تم تسجيل الدخول بنجاح!");
       window.location.href = "/dashboard";
     } else {
-      document.getElementById('status').innerText = data.error || "فشل تسجيل الدخول";
+      alert(data.error || "خطأ في تسجيل الدخول");
     }
   } catch (err) {
-    document.getElementById('status').innerText = "خطأ في الاتصال بالسيرفر";
+    console.error(err);
+    alert("حدث خطأ");
   }
 });
 </script>
