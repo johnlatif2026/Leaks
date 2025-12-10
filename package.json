@@ -1,5 +1,5 @@
 {
-  "name": "my-dashboard-app",
+  "name": "my-dashboard-site",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
@@ -8,10 +8,11 @@
   "dependencies": {
     "express": "^4.18.2",
     "body-parser": "^1.20.2",
-    "cors": "^2.8.5",
     "jsonwebtoken": "^9.0.0",
-    "firebase-admin": "^11.10.1",
+    "firebase-admin": "^12.0.0",
     "dotenv": "^16.3.1",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "cors": "^2.8.5",
+    "cookie-parser": "^1.4.6"
   }
 }
