@@ -1,48 +1,30 @@
 <!DOCTYPE html>
-<html lang="ar">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>تسجيل الدخول</title>
-<style>
-  body { font-family: Arial, sans-serif; direction: rtl; padding: 20px; background: #f7f7f7; }
-input, button { margin: 5px 0; padding: 8px; }
-button { cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 4px; }
-h1, h2 { color: #333; }
-ul { list-style-type: none; padding: 0; }
-li { background: #fff; margin: 5px 0; padding: 10px; border-radius: 4px; }
-</style>
+  <title>تسجيل الدخول</title>
 </head>
 <body>
-  <h1>تسجيل الدخول</h1>
-  <input type="text" id="username" placeholder="اسم المستخدم">
-  <input type="password" id="password" placeholder="كلمة المرور">
-  <button id="loginBtn">تسجيل الدخول</button>
+  <h1>Login</h1>
+  <form id="loginForm">
+    <input type="text" placeholder="Username" id="username" required>
+    <input type="password" placeholder="Password" id="password" required>
+    <button type="submit">Login</button>
+  </form>
 
-<script>
-document.getElementById("loginBtn").addEventListener("click", async () => {
-  const username = document.getElementById("username").value;
-  const password = document.getElementById("password").value;
-  if (!username || !password) return alert("اكتب اسم المستخدم وكلمة المرور");
-
-  try {
-    const res = await fetch("/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password })
+  <script>
+    const form = document.getElementById('loginForm');
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ username, password })
+      });
+      if(res.ok) window.location.href = '/dashboard.html';
+      else alert('خطأ في تسجيل الدخول');
     });
-    const data = await res.json();
-    if (data.token) {
-      localStorage.setItem("jwt", data.token);
-      alert("تم تسجيل الدخول بنجاح!");
-      window.location.href = "/dashboard";
-    } else {
-      alert(data.error || "خطأ في تسجيل الدخول");
-    }
-  } catch (err) {
-    console.error(err);
-    alert("حدث خطأ");
-  }
-});
-</script>
+  </script>
 </body>
 </html>
