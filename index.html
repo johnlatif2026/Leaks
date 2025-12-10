@@ -2,90 +2,43 @@
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Leakes - الصفحة الرئيسية</title>
+<title>الصفحة الرئيسية</title>
 <style>
-body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: #f4f6f8;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  margin: 0;
-}
-.container {
-  background: #fff;
-  padding: 40px;
-  border-radius: 12px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-  text-align: center;
-  width: 90%;
-  max-width: 400px;
-}
-input {
-  width: 100%;
-  padding: 12px;
-  margin: 10px 0;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  font-size: 16px;
-}
-button {
-  width: 100%;
-  padding: 12px;
-  background: #007bff;
-  color: #fff;
-  font-size: 16px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: 0.3s;
-}
-button:hover {
-  background: #0056b3;
-}
-#status {
-  margin-top: 15px;
-  font-size: 14px;
-  color: green;
-}
+body { font-family: Arial, sans-serif; direction: rtl; padding: 20px; background: #f7f7f7; }
+input, button { margin: 5px 0; padding: 8px; }
+button { cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 4px; }
+h1, h2 { color: #333; }
+ul { list-style-type: none; padding: 0; }
+li { background: #fff; margin: 5px 0; padding: 10px; border-radius: 4px; }
 </style>
 </head>
 <body>
-<div class="container">
-<h1>أهلا بك في Leaks</h1>
-<p>اكتب اسمك للمتابعة:</p>
-<input type="text" id="username" placeholder="اسمك">
-<button id="submitBtn">إرسال</button>
-<p id="status"></p>
-</div>
+  <h1>أهلا بك! اكتب اسمك</h1>
+  <input type="text" id="username" placeholder="اسمك">
+  <button id="sendBtn">إرسال</button>
 
 <script>
-document.getElementById('submitBtn').addEventListener('click', async () => {
-  const username = document.getElementById('username').value.trim();
-  if (!username) return alert("اكتب اسمك أولاً");
+document.getElementById("sendBtn").addEventListener("click", async () => {
+  const name = document.getElementById("username").value;
+  if (!name) return alert("اكتب اسمك أولاً");
+
+  const token = localStorage.getItem("jwt");
+  if (!token) return alert("سجل الدخول أولا من /login");
 
   try {
     const res = await fetch("/api/notify", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Bearer DEMO_TOKEN"
+        "Authorization": "Bearer " + token
       },
-      body: JSON.stringify({ message: `دخل الموقع: ${username}` })
+      body: JSON.stringify({ message: `العميل دخل واسمه: ${name}` })
     });
-
     const data = await res.json();
-    if (res.ok) {
-      document.getElementById('status').innerText = "تم إرسال اسمك!";
-      document.getElementById('username').value = "";
-    } else {
-      document.getElementById('status').innerText = data.error || "حدث خطأ";
-    }
+    alert("تم الإرسال!");
   } catch (err) {
-    document.getElementById('status').innerText = "خطأ في الاتصال بالسيرفر";
+    console.error(err);
+    alert("حدث خطأ في الإرسال");
   }
 });
 </script>
