@@ -1,108 +1,139 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="ar">
 <head>
-  <meta charset="utf-8" />
-  <title>Dashboard</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body{font-family:Arial;padding:20px;max-width:900px;margin:auto;}
-    .box{border:1px solid #ddd;padding:12px;border-radius:6px;margin-bottom:12px;}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard - إدارة الأقسام</title>
+<style>
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #f0f2f5;
+  margin: 0;
+  padding: 0;
+}
+header {
+  background: #343a40;
+  color: #fff;
+  padding: 15px;
+  text-align: center;
+}
+.container {
+  max-width: 900px;
+  margin: 20px auto;
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+input, textarea, select {
+  width: 100%;
+  padding: 10px;
+  margin: 8px 0;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 15px;
+}
+button {
+  padding: 12px 20px;
+  background: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+button:hover { background: #0056b3; }
+.section {
+  border-bottom: 1px solid #ddd;
+  padding: 10px 0;
+}
+.section:last-child { border: none; }
+</style>
 </head>
 <body>
+<header>
   <h1>لوحة التحكم</h1>
-  <button id="logout">تسجيل خروج</button>
+</header>
+<div class="container">
+<h2>إرسال إشعار</h2>
+<textarea id="notifyMessage" placeholder="اكتب الرسالة هنا"></textarea>
+<button id="sendNotify">إرسال</button>
 
-  <div class="box">
-    <h3>الزيارات الحية</h3>
-    <ul id="liveList"></ul>
-  </div>
+<h2>إنشاء قسم جديد</h2>
+<input type="text" id="sectionName" placeholder="اسم القسم">
+<input type="text" id="sectionTitle" placeholder="العنوان">
+<textarea id="sectionText" placeholder="النص"></textarea>
+<input type="text" id="sectionImage" placeholder="رابط الصورة (اختياري)">
+<button id="createSection">إنشاء</button>
 
-  <div class="box">
-    <h3>انشاء قسم</h3>
-    <input id="sectionName" placeholder="اسم القسم" />
-    <button id="createSection">انشاء</button>
-    <div id="sectionsList"></div>
-  </div>
+<h2>الأقسام الحالية</h2>
+<div id="sectionsContainer"></div>
+<p id="status"></p>
+</div>
 
-  <div class="box">
-    <h3>نشر منشور على الصفحة الرئيسية</h3>
-    <input id="postTitle" placeholder="العنوان" /><br/>
-    <select id="postSection"></select><br/>
-    <input id="postImage" placeholder="رابط الصورة (اختياري)" /><br/>
-    <textarea id="postText" placeholder="النص"></textarea><br/>
-    <button id="publish">ارسال</button>
-  </div>
+<script>
+const jwtToken = localStorage.getItem("jwt");
+if(!jwtToken) window.location.href = "/login.html";
 
-  <script>
-    // SSE
-    const evtSource = new EventSource('/api/events');
-    evtSource.addEventListener('new-entry', e => {
-      const data = JSON.parse(e.data);
-      const li = document.createElement('li');
-      li.textContent = `دخل: ${data.name || '(no name)'} @ ${new Date().toLocaleTimeString()}`;
-      document.getElementById('liveList').prepend(li);
+async function fetchSections() {
+  try {
+    const res = await fetch("/api/sections", {
+      headers: { "Authorization": "Bearer " + jwtToken }
     });
-    evtSource.addEventListener('new-post', e => {
-      const data = JSON.parse(e.data);
-      const li = document.createElement('li');
-      li.textContent = `منشور جديد: ${data.title || '(بدون عنوان)'} قسم: ${data.section || ''}`;
-      document.getElementById('liveList').prepend(li);
+    const data = await res.json();
+    const container = document.getElementById("sectionsContainer");
+    container.innerHTML = "";
+    data.forEach(sec => {
+      const div = document.createElement("div");
+      div.className = "section";
+      div.innerHTML = `<strong>${sec.title}</strong><p>${sec.text}</p>${sec.image ? `<img src="${sec.image}" width="100%">` : ""}`;
+      container.appendChild(div);
     });
+  } catch(err) {
+    console.error(err);
+  }
+}
 
-    // logout
-    document.getElementById('logout').addEventListener('click', async ()=>{
-      await fetch('/api/logout', { method: 'POST' });
-      window.location.href = '/login.html';
-    });
+document.getElementById("sendNotify").addEventListener("click", async () => {
+  const msg = document.getElementById("notifyMessage").value.trim();
+  if(!msg) return alert("اكتب الرسالة");
+  const res = await fetch("/api/notify", {
+    method: "POST",
+    headers: { "Content-Type":"application/json", "Authorization": "Bearer "+jwtToken },
+    body: JSON.stringify({ message: msg })
+  });
+  const data = await res.json();
+  document.getElementById("status").innerText = res.ok ? "تم الإرسال ✅" : data.error;
+  document.getElementById("notifyMessage").value="";
+});
 
-    // Sections
-    async function loadSections(){
-      const res = await fetch('/api/sections');
-      const j = await res.json();
-      const sel = document.getElementById('postSection');
-      sel.innerHTML = '<option value="">-- اختر قسم --</option>';
-      const list = document.getElementById('sectionsList');
-      list.innerHTML = '';
-      j.sections.forEach(s=>{
-        const opt = document.createElement('option');
-        opt.value = s.name; opt.textContent = s.name;
-        sel.appendChild(opt);
-        const div = document.createElement('div'); div.textContent = s.name; list.appendChild(div);
-      });
-    }
-    loadSections();
+document.getElementById("createSection").addEventListener("click", async () => {
+  const name = document.getElementById("sectionName").value.trim();
+  const title = document.getElementById("sectionTitle").value.trim();
+  const text = document.getElementById("sectionText").value.trim();
+  const image = document.getElementById("sectionImage").value.trim();
+  if(!name || !title || !text) return alert("اكمل كل الحقول المطلوبة");
+  
+  const res = await fetch("/api/section", {
+    method: "POST",
+    headers: { "Content-Type":"application/json", "Authorization": "Bearer "+jwtToken },
+    body: JSON.stringify({ name, title, text, image })
+  });
+  const data = await res.json();
+  if(res.ok){
+    document.getElementById("status").innerText="تم إنشاء القسم ✅";
+    document.getElementById("sectionName").value="";
+    document.getElementById("sectionTitle").value="";
+    document.getElementById("sectionText").value="";
+    document.getElementById("sectionImage").value="";
+    fetchSections();
+  }else{
+    document.getElementById("status").innerText = data.error;
+  }
+});
 
-    document.getElementById('createSection').addEventListener('click', async ()=>{
-      const name = document.getElementById('sectionName').value.trim();
-      if (!name) return alert('اكتب اسم القسم');
-      const res = await fetch('/api/sections', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ name })
-      });
-      if (res.ok) { alert('تم الإنشاء'); document.getElementById('sectionName').value=''; loadSections(); }
-      else alert('فشل الإنشاء');
-    });
-
-    // Publish post
-    document.getElementById('publish').addEventListener('click', async ()=>{
-      const title = document.getElementById('postTitle').value;
-      const section = document.getElementById('postSection').value;
-      const imageUrl = document.getElementById('postImage').value;
-      const text = document.getElementById('postText').value;
-      const res = await fetch('/api/publish', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ title, section, imageUrl, text })
-      });
-      if (res.ok) { alert('تم النشر'); document.getElementById('postTitle').value=''; document.getElementById('postText').value=''; loadPostsPreview(); }
-      else alert('فشل النشر');
-    });
-
-    async function loadPostsPreview(){
-      const res = await fetch('/api/posts');
-      const j = await res.json();
-      console.log('latest posts', j.posts);
-    }
-  </script>
+// initial fetch
+fetchSections();
+</script>
 </body>
 </html>
