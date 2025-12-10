@@ -77,7 +77,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
     const data = await res.json();
     if (res.ok) {
       localStorage.setItem("jwt", data.token);
-      window.location.href = "/dashboard.html";
+      window.location.href = "/dashboard";
     } else {
       document.getElementById('status').innerText = data.error || "فشل تسجيل الدخول";
     }
