@@ -1,149 +1,108 @@
 <!doctype html>
-<html lang="ar">
+<html>
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Dashboard - Admin</title>
-<style>
-body { font-family: Arial, sans-serif; direction: rtl; padding:20px; background:#f0f4f8; }
-.container { max-width:900px; margin:20px auto; }
-.card { background:#fff; padding:18px; border-radius:12px; box-shadow: 0 6px 20px rgba(2,6,23,0.06); margin-bottom:16px; }
-input, textarea, button { display:block; width:100%; margin-top:8px; padding:10px; border-radius:8px; border:1px solid #ddd; }
-.row { display:flex; gap:12px; }
-.col { flex:1; }
-button.primary { background:#16a34a; color:#fff; border:0; cursor:pointer; }
-button.danger { background:#ef4444; color:#fff; border:0; cursor:pointer; }
-img.preview { width:160px; height:160px; object-fit:cover; border-radius:10px; border:1px solid #eee; }
-small { color:#475569; }
-table { width:100%; border-collapse: collapse; }
-th, td { border:1px solid #ddd; padding:8px; text-align:right; }
-th { background:#f3f4f6; }
-</style>
+  <meta charset="utf-8" />
+  <title>Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:Arial;padding:20px;max-width:900px;margin:auto;}
+    .box{border:1px solid #ddd;padding:12px;border-radius:6px;margin-bottom:12px;}
+  </style>
 </head>
 <body>
-<div class="container">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h2>لوحة التحكم</h2>
-    <div>
-      <button id="logoutBtn">تسجيل خروج</button>
-    </div>
+  <h1>لوحة التحكم</h1>
+  <button id="logout">تسجيل خروج</button>
+
+  <div class="box">
+    <h3>الزيارات الحية</h3>
+    <ul id="liveList"></ul>
   </div>
 
-  <div class="card">
-    <h3>البيانات الحالية</h3>
-    <div id="current"></div>
+  <div class="box">
+    <h3>انشاء قسم</h3>
+    <input id="sectionName" placeholder="اسم القسم" />
+    <button id="createSection">انشاء</button>
+    <div id="sectionsList"></div>
   </div>
 
-  <div class="card">
-    <h3>رفع / تحديث البيانات</h3>
-    <form id="uploadForm" enctype="multipart/form-data">
-      <label>الاسم (مطلوب)</label>
-      <input name="name" id="nameField" required />
-      <label>الوصف</label>
-      <textarea name="description" id="descField"></textarea>
-      <label>صورة (jpg/png) - اختيارية</label>
-      <input type="file" name="image" id="imageField" accept=".jpg,.jpeg,.png" />
-      <div style="margin-top:10px; display:flex; gap:10px;">
-        <button class="primary" type="submit">ارفع / حدّث</button>
-        <button class="danger" id="deleteBtn" type="button">احذف</button>
-      </div>
-      <p id="msg" style="color: #0b5; margin-top:8px;"></p>
-    </form>
+  <div class="box">
+    <h3>نشر منشور على الصفحة الرئيسية</h3>
+    <input id="postTitle" placeholder="العنوان" /><br/>
+    <select id="postSection"></select><br/>
+    <input id="postImage" placeholder="رابط الصورة (اختياري)" /><br/>
+    <textarea id="postText" placeholder="النص"></textarea><br/>
+    <button id="publish">ارسال</button>
   </div>
 
-  <div class="card">
-    <h3>الزوار الذين سجلوا أسمائهم</h3>
-    <table id="visitorsTable">
-      <thead>
-        <tr><th>الاسم</th><th>تاريخ التسجيل</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-</div>
+  <script>
+    // SSE
+    const evtSource = new EventSource('/api/events');
+    evtSource.addEventListener('new-entry', e => {
+      const data = JSON.parse(e.data);
+      const li = document.createElement('li');
+      li.textContent = `دخل: ${data.name || '(no name)'} @ ${new Date().toLocaleTimeString()}`;
+      document.getElementById('liveList').prepend(li);
+    });
+    evtSource.addEventListener('new-post', e => {
+      const data = JSON.parse(e.data);
+      const li = document.createElement('li');
+      li.textContent = `منشور جديد: ${data.title || '(بدون عنوان)'} قسم: ${data.section || ''}`;
+      document.getElementById('liveList').prepend(li);
+    });
 
-<script>
-async function fetchProfile() {
-  const res = await fetch('/api/admin/profile');
-  if (!res.ok) {
-    if (res.status === 401) { window.location='/login'; return; }
-    document.getElementById('current').innerText = 'فشل في جلب البيانات';
-    return;
-  }
-  const j = await res.json();
-  if (!j.exists) {
-    document.getElementById('current').innerHTML = '<p>لا توجد بيانات مرفوعة بعد.</p>';
-    return;
-  }
-  const d = j.data;
-  const updatedAt = d.updatedAt ? new Date(d.updatedAt._seconds*1000).toLocaleString() : 'غير معروف';
-  document.getElementById('current').innerHTML = `
-    <div style="display:flex; gap:12px; align-items:center;">
-      ${d.imageUrl ? `<img src="${d.imageUrl}" class="preview" alt="صورة">` : ''}
-      <div>
-        <h4>${d.name || ''}</h4>
-        <p>${d.description || ''}</p>
-        <small>أخر تعديل: ${updatedAt}</small>
-      </div>
-    </div>
-  `;
-  document.getElementById('nameField').value = d.name || '';
-  document.getElementById('descField').value = d.description || '';
-}
+    // logout
+    document.getElementById('logout').addEventListener('click', async ()=>{
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    });
 
-// Fetch visitors
-async function fetchVisitors(){
-  const res = await fetch('/api/admin/visitors');
-  if(!res.ok) return;
-  const j = await res.json();
-  const tbody = document.querySelector('#visitorsTable tbody');
-  tbody.innerHTML = '';
-  j.visitors.forEach(v=>{
-    const tr = document.createElement('tr');
-    const date = v.createdAt ? new Date(v.createdAt).toLocaleString() : '';
-    tr.innerHTML = `<td>${v.name}</td><td>${date}</td>`;
-    tbody.appendChild(tr);
-  });
-}
+    // Sections
+    async function loadSections(){
+      const res = await fetch('/api/sections');
+      const j = await res.json();
+      const sel = document.getElementById('postSection');
+      sel.innerHTML = '<option value="">-- اختر قسم --</option>';
+      const list = document.getElementById('sectionsList');
+      list.innerHTML = '';
+      j.sections.forEach(s=>{
+        const opt = document.createElement('option');
+        opt.value = s.name; opt.textContent = s.name;
+        sel.appendChild(opt);
+        const div = document.createElement('div'); div.textContent = s.name; list.appendChild(div);
+      });
+    }
+    loadSections();
 
-document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  const fd = new FormData(form);
-  const res = await fetch('/api/admin/profile', { method: 'POST', body: fd });
-  const j = await res.json();
-  if (!res.ok) {
-    alert(j.error || 'حدث خطأ');
-    return;
-  }
-  document.getElementById('msg').textContent = 'تم الرفع/التحديث بنجاح';
-  fetchProfile();
-  setTimeout(()=>document.getElementById('msg').textContent='', 3000);
-});
+    document.getElementById('createSection').addEventListener('click', async ()=>{
+      const name = document.getElementById('sectionName').value.trim();
+      if (!name) return alert('اكتب اسم القسم');
+      const res = await fetch('/api/sections', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name })
+      });
+      if (res.ok) { alert('تم الإنشاء'); document.getElementById('sectionName').value=''; loadSections(); }
+      else alert('فشل الإنشاء');
+    });
 
-document.getElementById('deleteBtn').addEventListener('click', async () => {
-  if (!confirm('هل أنت متأكد من الحذف؟')) return;
-  const res = await fetch('/api/admin/profile', { method: 'DELETE' });
-  const j = await res.json();
-  if (!res.ok) {
-    alert(j.error || 'فشل في الحذف');
-    return;
-  }
-  alert('تم الحذف');
-  fetchProfile();
-  document.getElementById('nameField').value = '';
-  document.getElementById('descField').value = '';
-});
+    // Publish post
+    document.getElementById('publish').addEventListener('click', async ()=>{
+      const title = document.getElementById('postTitle').value;
+      const section = document.getElementById('postSection').value;
+      const imageUrl = document.getElementById('postImage').value;
+      const text = document.getElementById('postText').value;
+      const res = await fetch('/api/publish', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ title, section, imageUrl, text })
+      });
+      if (res.ok) { alert('تم النشر'); document.getElementById('postTitle').value=''; document.getElementById('postText').value=''; loadPostsPreview(); }
+      else alert('فشل النشر');
+    });
 
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-  await fetch('/api/logout', { method: 'POST' });
-  window.location = '/login';
-});
-
-// On load
-fetchProfile();
-fetchVisitors();
-setInterval(fetchVisitors, 10000); // تحديث الزوار كل 10 ثواني
-</script>
+    async function loadPostsPreview(){
+      const res = await fetch('/api/posts');
+      const j = await res.json();
+      console.log('latest posts', j.posts);
+    }
+  </script>
 </body>
 </html>
