@@ -1,46 +1,30 @@
 <!DOCTYPE html>
-<html lang="ar">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>الصفحة الرئيسية</title>
-<style>
-body { font-family: Arial, sans-serif; direction: rtl; padding: 20px; background: #f7f7f7; }
-input, button { margin: 5px 0; padding: 8px; }
-button { cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 4px; }
-h1, h2 { color: #333; }
-ul { list-style-type: none; padding: 0; }
-li { background: #fff; margin: 5px 0; padding: 10px; border-radius: 4px; }
-</style>
+  <title>الصفحة الرئيسية</title>
 </head>
 <body>
-  <h1>أهلا بك! اكتب اسمك</h1>
-  <input type="text" id="username" placeholder="اسمك">
-  <button id="sendBtn">إرسال</button>
+  <h1>أهلاً بك في الموقع</h1>
+  <form id="nameForm">
+    <input type="text" placeholder="اكتب اسمك" id="nameInput" required>
+    <button type="submit">دخول</button>
+  </form>
 
-<script>
-document.getElementById("sendBtn").addEventListener("click", async () => {
-  const name = document.getElementById("username").value;
-  if (!name) return alert("اكتب اسمك أولاً");
+  <div id="welcome"></div>
 
-  const token = localStorage.getItem("jwt");
-  if (!token) return alert("سجل الدخول أولا من /login");
-
-  try {
-    const res = await fetch("/api/notify", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + token
-      },
-      body: JSON.stringify({ message: `العميل دخل واسمه: ${name}` })
+  <script>
+    const form = document.getElementById('nameForm');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('nameInput').value;
+      const res = await fetch('/api/enter', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name })
+      });
+      const data = await res.json();
+      document.getElementById('welcome').innerText = `أهلا ${name}`;
     });
-    const data = await res.json();
-    alert("تم الإرسال!");
-  } catch (err) {
-    console.error(err);
-    alert("حدث خطأ في الإرسال");
-  }
-});
-</script>
+  </script>
 </body>
 </html>
