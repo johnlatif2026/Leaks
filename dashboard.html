@@ -2,138 +2,109 @@
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard - إدارة الأقسام</title>
+<title>الداشبورد</title>
 <style>
-body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: #f0f2f5;
-  margin: 0;
-  padding: 0;
-}
-header {
-  background: #343a40;
-  color: #fff;
-  padding: 15px;
-  text-align: center;
-}
-.container {
-  max-width: 900px;
-  margin: 20px auto;
-  background: #fff;
-  padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-}
-input, textarea, select {
-  width: 100%;
-  padding: 10px;
-  margin: 8px 0;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  font-size: 15px;
-}
-button {
-  padding: 12px 20px;
-  background: #007bff;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: 0.3s;
-}
-button:hover { background: #0056b3; }
-.section {
-  border-bottom: 1px solid #ddd;
-  padding: 10px 0;
-}
-.section:last-child { border: none; }
+  body { font-family: Arial, sans-serif; direction: rtl; padding: 20px; background: #f7f7f7; }
+input, button { margin: 5px 0; padding: 8px; }
+button { cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 4px; }
+h1, h2 { color: #333; }
+ul { list-style-type: none; padding: 0; }
+li { background: #fff; margin: 5px 0; padding: 10px; border-radius: 4px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>لوحة التحكم</h1>
-</header>
-<div class="container">
-<h2>إرسال إشعار</h2>
-<textarea id="notifyMessage" placeholder="اكتب الرسالة هنا"></textarea>
-<button id="sendNotify">إرسال</button>
+  <h1>الداشبورد</h1>
 
-<h2>إنشاء قسم جديد</h2>
-<input type="text" id="sectionName" placeholder="اسم القسم">
-<input type="text" id="sectionTitle" placeholder="العنوان">
-<textarea id="sectionText" placeholder="النص"></textarea>
-<input type="text" id="sectionImage" placeholder="رابط الصورة (اختياري)">
-<button id="createSection">إنشاء</button>
+  <h2>إرسال رسالة</h2>
+  <input type="text" id="message" placeholder="اكتب الرسالة">
+  <button id="sendMsg">إرسال</button>
 
-<h2>الأقسام الحالية</h2>
-<div id="sectionsContainer"></div>
-<p id="status"></p>
-</div>
+  <h2>إنشاء قسم</h2>
+  <input type="text" id="sectionName" placeholder="اسم القسم">
+  <input type="text" id="title" placeholder="العنوان">
+  <input type="text" id="text" placeholder="النص">
+  <input type="text" id="image" placeholder="رابط الصورة (اختياري)">
+  <button id="createSection">إنشاء</button>
+
+  <h2>الأقسام الحالية</h2>
+  <ul id="sectionsList"></ul>
 
 <script>
-const jwtToken = localStorage.getItem("jwt");
-if(!jwtToken) window.location.href = "/login.html";
+const token = localStorage.getItem("jwt");
+if (!token) {
+  alert("سجل الدخول أولا");
+  window.location.href = "/login";
+}
 
-async function fetchSections() {
+// إرسال رسالة عبر Telegram
+document.getElementById("sendMsg").addEventListener("click", async () => {
+  const msg = document.getElementById("message").value;
+  if (!msg) return alert("اكتب الرسالة");
+
   try {
-    const res = await fetch("/api/sections", {
-      headers: { "Authorization": "Bearer " + jwtToken }
+    const res = await fetch("/api/notify", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify({ message: msg })
     });
     const data = await res.json();
-    const container = document.getElementById("sectionsContainer");
-    container.innerHTML = "";
-    data.forEach(sec => {
-      const div = document.createElement("div");
-      div.className = "section";
-      div.innerHTML = `<strong>${sec.title}</strong><p>${sec.text}</p>${sec.image ? `<img src="${sec.image}" width="100%">` : ""}`;
-      container.appendChild(div);
+    alert("تم الإرسال!");
+  } catch (err) {
+    console.error(err);
+    alert("خطأ في الإرسال");
+  }
+});
+
+// إنشاء قسم جديد
+document.getElementById("createSection").addEventListener("click", async () => {
+  const name = document.getElementById("sectionName").value;
+  const title = document.getElementById("title").value;
+  const text = document.getElementById("text").value;
+  const image = document.getElementById("image").value;
+
+  if (!name || !title || !text) return alert("اكمل جميع الحقول المطلوبة");
+
+  try {
+    const res = await fetch("/api/section", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify({ name, title, text, image })
     });
-  } catch(err) {
+    const data = await res.json();
+    alert("تم إنشاء القسم!");
+    loadSections();
+  } catch (err) {
+    console.error(err);
+    alert("خطأ في إنشاء القسم");
+  }
+});
+
+// تحميل الأقسام الحالية
+async function loadSections() {
+  try {
+    const res = await fetch("/api/sections", {
+      headers: { "Authorization": "Bearer " + token }
+    });
+    const sections = await res.json();
+    const ul = document.getElementById("sectionsList");
+    ul.innerHTML = "";
+    sections.forEach(sec => {
+      const li = document.createElement("li");
+      li.textContent = `[${sec.collection}] ${sec.title}: ${sec.text}`;
+      ul.appendChild(li);
+    });
+  } catch (err) {
     console.error(err);
   }
 }
 
-document.getElementById("sendNotify").addEventListener("click", async () => {
-  const msg = document.getElementById("notifyMessage").value.trim();
-  if(!msg) return alert("اكتب الرسالة");
-  const res = await fetch("/api/notify", {
-    method: "POST",
-    headers: { "Content-Type":"application/json", "Authorization": "Bearer "+jwtToken },
-    body: JSON.stringify({ message: msg })
-  });
-  const data = await res.json();
-  document.getElementById("status").innerText = res.ok ? "تم الإرسال ✅" : data.error;
-  document.getElementById("notifyMessage").value="";
-});
-
-document.getElementById("createSection").addEventListener("click", async () => {
-  const name = document.getElementById("sectionName").value.trim();
-  const title = document.getElementById("sectionTitle").value.trim();
-  const text = document.getElementById("sectionText").value.trim();
-  const image = document.getElementById("sectionImage").value.trim();
-  if(!name || !title || !text) return alert("اكمل كل الحقول المطلوبة");
-  
-  const res = await fetch("/api/section", {
-    method: "POST",
-    headers: { "Content-Type":"application/json", "Authorization": "Bearer "+jwtToken },
-    body: JSON.stringify({ name, title, text, image })
-  });
-  const data = await res.json();
-  if(res.ok){
-    document.getElementById("status").innerText="تم إنشاء القسم ✅";
-    document.getElementById("sectionName").value="";
-    document.getElementById("sectionTitle").value="";
-    document.getElementById("sectionText").value="";
-    document.getElementById("sectionImage").value="";
-    fetchSections();
-  }else{
-    document.getElementById("status").innerText = data.error;
-  }
-});
-
-// initial fetch
-fetchSections();
+loadSections();
 </script>
 </body>
 </html>
