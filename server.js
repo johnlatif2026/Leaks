@@ -1,228 +1,196 @@
 require('dotenv').config();
 const express = require('express');
-const path = require('path');
-const cookieParser = require('cookie-parser');
-const jwt = require('jsonwebtoken');
-const multer = require('multer');
+const bodyParser = require('body-parser');
 const admin = require('firebase-admin');
-const fetch = require('node-fetch'); // لإرسال رسائل تيليجرام
+const jwt = require('jsonwebtoken');
+const fetch = require('node-fetch');
+const cors = require('cors');
+const multer = require('multer');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cors({ origin: true, credentials: true }));
+
 const PORT = process.env.PORT || 3000;
-
-const ADMIN_USER = process.env.ADMIN_USER || 'admin';
-const ADMIN_PASS = process.env.ADMIN_PASS || 'password';
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// Initialize Firebase
-if (!process.env.FIREBASE_CONFIG) {
-  console.error("FIREBASE_CONFIG not set in .env");
+// Initialize Firebase Admin using JSON in env
+if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  console.error('FIREBASE_SERVICE_ACCOUNT_JSON is missing in .env');
   process.exit(1);
 }
-
-let firebaseConfig;
-try {
-  firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
-} catch(e){
-  console.error("Failed to parse FIREBASE_CONFIG JSON:", e.message);
-  process.exit(1);
-}
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
 
 admin.initializeApp({
-  credential: admin.credential.cert(firebaseConfig),
-  storageBucket: firebaseConfig.project_id + ".appspot.com"
+  credential: admin.credential.cert(serviceAccount)
 });
 
 const db = admin.firestore();
-const bucket = admin.storage().bucket();
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
+// Simple in-memory list of SSE clients
+const sseClients = [];
 
-// Serve HTML files
-app.get('/', (req,res)=>res.sendFile(path.join(__dirname,'index.html')));
-app.get('/login', (req,res)=>res.sendFile(path.join(__dirname,'login.html')));
-
-// JWT auth middleware
-function checkAuthRedirect(req,res,next){
-  const token = req.cookies.token;
-  if(!token) return res.redirect('/login');
-  try { jwt.verify(token, JWT_SECRET); next(); } 
-  catch(e){ return res.redirect('/login'); }
+// Helper: broadcast SSE event to dashboard clients
+function broadcastEvent(eventName, data) {
+  const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach(res => {
+    try { res.write(payload); } catch (e) {}
+  });
 }
 
-function checkAuthApi(req,res,next){
-  const token = req.cookies.token;
-  if(!token) return res.status(401).json({error:'not authenticated'});
-  try { req.user = jwt.verify(token, JWT_SECRET); next(); }
-  catch(e){ return res.status(401).json({error:'invalid token'}); }
-}
-
-// Function to send Telegram message
-async function sendTelegramMessage(message) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+// Helper: send Telegram message
+async function sendTelegram(text) {
+  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) return;
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
   try {
     await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message })
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
     });
-  } catch(err) {
-    console.error('Telegram send error:', err);
+  } catch (err) {
+    console.error('Telegram send failed:', err);
   }
 }
 
-// Dashboard route
-app.get('/dashboard', checkAuthRedirect, (req,res)=>res.sendFile(path.join(__dirname,'dashboard.html')));
+// Serve static HTML files
+const path = require('path');
+app.use(express.static(path.join(__dirname, '/')));
 
-// Visitors API
-app.post('/api/visitor', async (req,res)=>{
-  const name = (req.body.name||'').trim();
-  if(!name) return res.status(400).json({error:'اسم الزائر مطلوب'});
-  try {
-    const docRef = await db.collection('visitors').add({
-      name,
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-    res.json({success:true,id:docRef.id});
-  } catch(err){
-    console.error('Visitor save error:', err);
-    res.status(500).json({error:'server error'});
+// LOGIN API - issues JWT and sets httpOnly cookie
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
+    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '8h' });
+    res.cookie('token', token, { httpOnly: true, sameSite: 'lax' });
+    return res.json({ ok: true });
   }
+  res.status(401).json({ ok: false, message: 'Invalid credentials' });
 });
 
-// Fetch all visitors (for dashboard)
-app.get('/api/admin/visitors', checkAuthApi, async (req,res)=>{
-  try{
-    const snap = await db.collection('visitors').orderBy('createdAt','desc').get();
-    const visitors = snap.docs.map(doc=>{
-      const d = doc.data();
-      return { id: doc.id, name: d.name, createdAt: d.createdAt?d.createdAt.toDate() : null };
-    });
-    res.json({visitors});
-  } catch(err){
-    console.error('Visitors fetch error:', err);
-    res.status(500).json({error:'server error'});
-  }
-});
-
-// Public profile API
-app.get('/api/public/profile', async (req,res)=>{
-  try{
-    const doc = await db.collection('admin').doc('profile').get();
-    if(!doc.exists) return res.json({exists:false,data:null});
-    res.json({exists:true,data:doc.data()});
-  } catch(err){
-    console.error(err);
-    res.status(500).json({error:'server error'});
-  }
-});
-
-// Login API with Telegram notification
-app.post('/api/login',(req,res)=>{
-  const {username,password} = req.body||{};
-  if(!username||!password) return res.status(400).json({error:'invalid credentials'});
-
-  if(username===ADMIN_USER && password===ADMIN_PASS){
-    const token = jwt.sign({user:username}, JWT_SECRET, {expiresIn:'12h'});
-    res.cookie('token', token, {httpOnly:true,sameSite:'lax'});
-
-    // إرسال رسالة تيليجرام
-    sendTelegramMessage(`تم تسجيل دخول المستخدم: ${username} في ${new Date().toLocaleString()} من IP: ${req.ip}`);
-
-    return res.json({success:true});
-  } else return res.status(401).json({error:'wrong credentials'});
-});
-
-// Logout
-app.post('/api/logout',(req,res)=>{
+// LOGOUT
+app.post('/api/logout', (req, res) => {
   res.clearCookie('token');
-  res.json({success:true});
+  res.json({ ok: true });
 });
 
-// Admin API
-app.get('/api/admin/profile', checkAuthApi, async (req,res)=>{
-  try{
-    const doc = await db.collection('admin').doc('profile').get();
-    if(!doc.exists) return res.json({exists:false,data:null});
-    res.json({exists:true,data:doc.data()});
-  } catch(err){
-    console.error(err);
-    res.status(500).json({error:'server error'});
+// Middleware - verify JWT from cookie or Authorization header
+function authMiddleware(req, res, next) {
+  const token = (req.cookies && req.cookies.token) || req.header('Authorization')?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ ok: false, message: 'Unauthorized' });
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = payload;
+    next();
+  } catch (e) {
+    return res.status(401).json({ ok: false, message: 'Token invalid' });
+  }
+}
+
+// SSE endpoint for dashboard to receive live events
+app.get('/api/events', (req, res) => {
+  // keep connection open
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+  res.flushHeaders();
+  res.write('retry: 2000\n\n');
+
+  sseClients.push(res);
+  req.on('close', () => {
+    const idx = sseClients.indexOf(res);
+    if (idx >= 0) sseClients.splice(idx, 1);
+  });
+});
+
+// Homepage: user submits name -> save to Firestore and broadcast to SSE and Telegram
+app.post('/api/entry', async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ ok: false, message: 'Name required' });
+  const doc = {
+    name,
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  };
+  await db.collection('entries').add(doc);
+
+  // broadcast to dashboard clients
+  broadcastEvent('new-entry', doc);
+
+  // send Telegram
+  const text = `New visitor: <b>${name}</b>`;
+  sendTelegram(text);
+
+  res.json({ ok: true });
+});
+
+// API: get latest entries
+app.get('/api/entries', async (req, res) => {
+  const snap = await db.collection('entries').orderBy('createdAt', 'desc').limit(50).get();
+  const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  res.json({ ok: true, entries: arr });
+});
+
+// API: get published posts (for homepage)
+app.get('/api/posts', async (req, res) => {
+  const snap = await db.collection('posts').orderBy('createdAt', 'desc').limit(50).get();
+  const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  res.json({ ok: true, posts: arr });
+});
+
+// API: publish a post (from dashboard) -- protected
+app.post('/api/publish', authMiddleware, async (req, res) => {
+  const { title, section, imageUrl, text } = req.body;
+  const doc = {
+    title: title || '',
+    section: section || '',
+    imageUrl: imageUrl || '',
+    text: text || '',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    author: req.user.username
+  };
+  await db.collection('posts').add(doc);
+  broadcastEvent('new-post', doc);
+  res.json({ ok: true });
+});
+
+// API: create section (protected)
+app.post('/api/sections', authMiddleware, async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ ok: false, message: 'Section name required' });
+  const doc = { name, createdAt: admin.firestore.FieldValue.serverTimestamp() };
+  await db.collection('sections').add(doc);
+  res.json({ ok: true });
+});
+
+// API: list sections
+app.get('/api/sections', async (req, res) => {
+  const snap = await db.collection('sections').orderBy('createdAt', 'asc').get();
+  const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  res.json({ ok: true, sections: arr });
+});
+
+// Serve /dashboard only if cookie token valid, otherwise redirect to login
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+
+app.get('/dashboard', (req, res) => {
+  const token = req.cookies?.token;
+  if (!token) return res.redirect('/login.html');
+  try {
+    jwt.verify(token, JWT_SECRET);
+    return res.sendFile(path.join(__dirname, 'dashboard.html'));
+  } catch (e) {
+    return res.redirect('/login.html');
   }
 });
 
-// Upload/update profile (accept JPG + PNG)
-app.post('/api/admin/profile', checkAuthApi, upload.single('image'), async (req,res)=>{
-  try{
-    const {name,description} = req.body;
-    if(!name) return res.status(400).json({error:'name required'});
-    const profileRef = db.collection('admin').doc('profile');
-    const dataToSave = {
-      name,
-      description: description||'',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-
-    if(req.file){
-      const file = req.file;
-      const mimetype = (file.mimetype||'').toLowerCase();
-      if(!['image/jpeg','image/jpg','image/pjpeg','image/png'].includes(mimetype))
-        return res.status(400).json({error:'Only JPG/PNG allowed'});
-
-      const ext = mimetype.includes('png') ? 'png' : 'jpg';
-      const filename = `admin-profile-${Date.now()}.${ext}`;
-      const fileRef = bucket.file(filename);
-
-      try{
-        await fileRef.save(file.buffer,{
-          metadata:{contentType:mimetype},
-          public:true
-        });
-        await fileRef.makePublic();
-        dataToSave.imageUrl = `https://storage.googleapis.com/${bucket.name}/${filename}`;
-        dataToSave.imageName = filename;
-      } catch(err){
-        console.error('Firebase Storage upload error:', err);
-        return res.status(500).json({error:'فشل رفع الصورة', details: err.message});
-      }
-    }
-
-    await profileRef.set(dataToSave,{merge:true});
-    const saved = await profileRef.get();
-    res.json({success:true,data:saved.data()});
-
-  } catch(err){
-    console.error('Profile save error:', err);
-    res.status(500).json({error:'server error',details:err.message});
-  }
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server listening on http://localhost:${PORT}`);
 });
-
-// Delete profile
-app.delete('/api/admin/profile', checkAuthApi, async (req,res)=>{
-  try{
-    const profileRef = db.collection('admin').doc('profile');
-    const doc = await profileRef.get();
-    if(!doc.exists) return res.status(404).json({error:'not found'});
-    const data = doc.data();
-
-    if(data && data.imageName){
-      try{ await bucket.file(data.imageName).delete(); } 
-      catch(e){ console.warn('Could not delete image',e.message); }
-    }
-
-    await profileRef.delete();
-    res.json({success:true});
-  } catch(err){
-    console.error('Profile delete error:', err);
-    res.status(500).json({error:'server error'});
-  }
-});
-
-app.listen(PORT,()=>console.log(`Server running on port ${PORT}`));
