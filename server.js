@@ -2,20 +2,16 @@ import express from "express";
 import admin from "firebase-admin";
 import jwt from "jsonwebtoken";
 import fetch from "node-fetch";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 app.use(express.json());
 
-// Firebase Admin init
-try {
-  admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_CONFIG))
-  });
-  console.log("Firebase Admin Initialized ✅");
-} catch (err) {
-  console.error("Firebase Admin init error:", err);
-}
-
+// Firebase Admin Initialization
+admin.initializeApp({
+  credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_CONFIG))
+});
 const db = admin.firestore();
 
 // JWT Middleware
@@ -25,10 +21,26 @@ function authMiddleware(req, res, next) {
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
     next();
-  } catch (err) {
+  } catch {
     res.status(401).json({ error: "Invalid token" });
   }
 }
+
+// Serve HTML pages directly
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "login.html"));
+});
+
+app.get("/dashboard", authMiddleware, (req, res) => {
+  res.sendFile(path.join(__dirname, "dashboard.html"));
+});
 
 // Login API
 app.post("/api/login", (req, res) => {
@@ -40,10 +52,11 @@ app.post("/api/login", (req, res) => {
   res.status(401).json({ error: "Invalid credentials" });
 });
 
-// Notify API - إرسال رسالة Telegram
+// Notify via Telegram
 app.post("/api/notify", authMiddleware, async (req, res) => {
   const { message } = req.body;
   if (!message) return res.status(400).json({ error: "Message required" });
+
   try {
     const tgRes = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
@@ -64,6 +77,7 @@ app.post("/api/notify", authMiddleware, async (req, res) => {
 app.post("/api/section", authMiddleware, async (req, res) => {
   const { name, title, text, image } = req.body;
   if (!name || !title || !text) return res.status(400).json({ error: "Required fields missing" });
+
   try {
     const docRef = await db.collection(name).add({ title, text, image: image || "" });
     res.json({ id: docRef.id });
@@ -90,7 +104,7 @@ app.get("/api/sections", authMiddleware, async (req, res) => {
   }
 });
 
-// Default route
-app.get("/", (req, res) => res.send("Serverless Firebase + Telegram API Running ✅"));
+// Default ping route
+app.get("/api/ping", (req, res) => res.send("Server is running ✅"));
 
 export default app;
